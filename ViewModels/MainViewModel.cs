@@ -149,6 +149,7 @@ public partial class ChartPanel : ObservableObject
         {
             Name = column.Name,
             FileName = column.ParentFileName,
+            LegendText = $"{column.ParentFileName} - {column.Name}",
             Color = Palette[Curves.Count % Palette.Length],
             Column = column
         };

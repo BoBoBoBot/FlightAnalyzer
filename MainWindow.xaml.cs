@@ -203,36 +203,56 @@ public partial class MainWindow : Window
             //更新垂直线位置
             panel.VerticalLine.X = mouseX;
             panel.VerticalLine.IsVisible = true;
+
+            // 获取实际绘制的曲线列表（跳过被用作X轴的曲线）
+            var plottedCurves = panel.Curves.Where(c =>
+                !(panel.XAxisMode == XAxisMode.ColumnBased
+                  && !string.IsNullOrEmpty(panel.XAxisColumnName)
+                  && c.Column.Name == panel.XAxisColumnName)).ToList();
+
             int i = 0;
 
             //遍历所有 scatter，更新图例文字
             foreach (var scatter in panel.Plot.GetPlottables<ScottPlot.Plottables.Scatter>())
             {
+                if (i >= plottedCurves.Count) break;
 
+                var curve = plottedCurves[i];
                 var point = scatter.Data.GetNearestX(coord, panel.Plot.LastRender);
                 if (point.IsReal)
                 {
-                    scatter.LegendText = $"{panel.Curves[i].FileName} - {panel.Curves[i].Name}: [{point.Y:F2}]";
+                    scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{point.Y:F2}]";
+                    curve.LegendText = $"{curve.FileName} - {curve.Name}: [{point.Y:F2}]";
+                }
+                else
+                {
+                    // 点不存在，尝试插值
+                    double? interpolatedY = InterpolateAtX(scatter, mouseX);
+                    if (interpolatedY.HasValue)
+                    {
+                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {interpolatedY.Value:F2}]";
+                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {interpolatedY.Value:F2}]";
+                    }
+                    else
+                    {
+                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [--]";
+                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [--]";
+                    }
+                }
 
-                    panel.Curves[i].LegendText = $"{panel.Curves[i].FileName} - {panel.Curves[i].Name}: [{point.Y:F2}]";
-
-                    // 根据X轴模式格式化标签
+                // 根据X轴模式格式化标签（只设置一次）
+                if (i == 0)
+                {
                     if (panel.XAxisMode == XAxisMode.ColumnBased && !string.IsNullOrEmpty(panel.XAxisColumnName))
                     {
-                        // 时间列模式：显示 MM:SS.s 格式
                         int minutes = (int)(coord.X / 60);
                         double seconds = coord.X - minutes * 60;
                         panel.VerticalLine.LabelText = $"{minutes:D2}:{seconds:F1}";
                     }
                     else
                     {
-                        // 索引模式：显示索引值
                         panel.VerticalLine.LabelText = $"索引 {coord.X:F1}";
                     }
-                }
-                else
-                {
-                    panel.Curves[i].LegendText = $"{panel.Curves[i].FileName} - {panel.Curves[i].Name}";
                 }
                 i++;
             }
@@ -247,20 +267,38 @@ public partial class MainWindow : Window
                     otherPanel.VerticalLine.IsVisible = true;
                     otherPanel.VerticalLine.LabelText = panel.VerticalLine.LabelText;
 
+                    // 获取实际绘制的曲线列表（跳过被用作X轴的曲线）
+                    var otherPlottedCurves = otherPanel.Curves.Where(c =>
+                        !(otherPanel.XAxisMode == XAxisMode.ColumnBased
+                          && !string.IsNullOrEmpty(otherPanel.XAxisColumnName)
+                          && c.Column.Name == otherPanel.XAxisColumnName)).ToList();
+
                     // 同步更新其他图表的图例Y值
                     int j = 0;
                     foreach (var scatter in otherPanel.Plot.GetPlottables<ScottPlot.Plottables.Scatter>())
                     {
+                        if (j >= otherPlottedCurves.Count) break;
+
+                        var curve = otherPlottedCurves[j];
                         var point = scatter.Data.GetNearestX(coord, otherPanel.Plot.LastRender);
                         if (point.IsReal)
                         {
-                            scatter.LegendText = $"{otherPanel.Curves[j].FileName} - {otherPanel.Curves[j].Name}: [{point.Y:F2}]";
-                            otherPanel.Curves[j].LegendText = scatter.LegendText;
+                            scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{point.Y:F2}]";
+                            curve.LegendText = scatter.LegendText;
                         }
                         else
                         {
-                            scatter.LegendText = $"{otherPanel.Curves[j].FileName} - {otherPanel.Curves[j].Name}";
-                            otherPanel.Curves[j].LegendText = scatter.LegendText;
+                            double? interpolatedY = InterpolateAtX(scatter, mouseX);
+                            if (interpolatedY.HasValue)
+                            {
+                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {interpolatedY.Value:F2}]";
+                                curve.LegendText = scatter.LegendText;
+                            }
+                            else
+                            {
+                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [--]";
+                                curve.LegendText = scatter.LegendText;
+                            }
                         }
                         j++;
                     }
@@ -680,6 +718,51 @@ public partial class MainWindow : Window
             try { current = VisualTreeHelper.GetParent(current); }
             catch { return null; }
         }
+        return null;
+    }
+
+    /// <summary>
+    /// 在散点数据中对指定X值进行线性插值
+    /// </summary>
+    private static double? InterpolateAtX(ScottPlot.Plottables.Scatter scatter, double targetX)
+    {
+        var points = scatter.Data.GetScatterPoints();
+        if (points.Count < 2) return null;
+
+        // 找到targetX两侧最近的两个点
+        double? leftX = null, leftY = null;
+        double? rightX = null, rightY = null;
+
+        for (int idx = 0; idx < points.Count; idx++)
+        {
+            double px = points[idx].X;
+            double py = points[idx].Y;
+            if (double.IsNaN(px) || double.IsNaN(py)) continue;
+
+            if (px <= targetX)
+            {
+                leftX = px;
+                leftY = py;
+            }
+            else if (rightX == null)
+            {
+                rightX = px;
+                rightY = py;
+                break;
+            }
+        }
+
+        // 两侧都有点才插值
+        if (leftX.HasValue && leftY.HasValue && rightX.HasValue && rightY.HasValue)
+        {
+            double t = (targetX - leftX.Value) / (rightX.Value - leftX.Value);
+            return leftY.Value + t * (rightY.Value - leftY.Value);
+        }
+
+        // 只有一侧有点，返回最近的点
+        if (leftY.HasValue) return leftY.Value;
+        if (rightY.HasValue) return rightY.Value;
+
         return null;
     }
 
