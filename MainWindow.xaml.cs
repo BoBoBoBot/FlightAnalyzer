@@ -221,8 +221,10 @@ public partial class MainWindow : Window
                 var point = scatter.Data.GetNearestX(coord, panel.Plot.LastRender);
                 if (point.IsReal)
                 {
-                    scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{point.Y:F2}]";
-                    curve.LegendText = $"{curve.FileName} - {curve.Name}: [{point.Y:F2}]";
+                    // 原始数据：使用G格式保留原始精度，去除末尾多余的零
+                    string yStr = point.Y.ToString("G");
+                    scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
+                    curve.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
                 }
                 else
                 {
@@ -230,8 +232,10 @@ public partial class MainWindow : Window
                     double? interpolatedY = InterpolateAtX(scatter, mouseX);
                     if (interpolatedY.HasValue)
                     {
-                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {interpolatedY.Value:F2}]";
-                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {interpolatedY.Value:F2}]";
+                        // 插值数据：固定显示3位小数
+                        string yStr = interpolatedY.Value.ToString("F3");
+                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {yStr}]";
+                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {yStr}]";
                     }
                     else
                     {
@@ -283,7 +287,8 @@ public partial class MainWindow : Window
                         var point = scatter.Data.GetNearestX(coord, otherPanel.Plot.LastRender);
                         if (point.IsReal)
                         {
-                            scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{point.Y:F2}]";
+                            string yStr = point.Y.ToString("G");
+                            scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
                             curve.LegendText = scatter.LegendText;
                         }
                         else
@@ -291,7 +296,8 @@ public partial class MainWindow : Window
                             double? interpolatedY = InterpolateAtX(scatter, mouseX);
                             if (interpolatedY.HasValue)
                             {
-                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {interpolatedY.Value:F2}]";
+                                string yStr = interpolatedY.Value.ToString("F3");
+                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {yStr}]";
                                 curve.LegendText = scatter.LegendText;
                             }
                             else
