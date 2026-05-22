@@ -572,10 +572,18 @@ public partial class MainWindow : Window
 
     #region X轴设置
 
+    /// <summary>
+    /// 从MenuItem的DataContext获取ChartPanel
+    /// </summary>
+    private ChartPanel? GetChartPanelFromMenuItem(MenuItem menuItem)
+    {
+        return menuItem.DataContext as ChartPanel;
+    }
+
     private void XAxisMode_IndexBased_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem menuItem) return;
-        var panel = FindParentDataContext<ChartPanel>(menuItem);
+        var panel = GetChartPanelFromMenuItem(menuItem);
         if (panel == null) return;
 
         panel.XAxisMode = XAxisMode.IndexBased;
@@ -587,7 +595,7 @@ public partial class MainWindow : Window
     private void XAxisMode_ColumnBased_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem menuItem) return;
-        var panel = FindParentDataContext<ChartPanel>(menuItem);
+        var panel = GetChartPanelFromMenuItem(menuItem);
         if (panel == null) return;
 
         panel.XAxisMode = XAxisMode.ColumnBased;
@@ -616,7 +624,8 @@ public partial class MainWindow : Window
                 Header = colName,
                 FontSize = 13,
                 IsCheckable = true,
-                IsChecked = colName == panel.XAxisColumnName
+                IsChecked = colName == panel.XAxisColumnName,
+                DataContext = panel
             };
             item.Click += (_, _) =>
             {
@@ -646,7 +655,7 @@ public partial class MainWindow : Window
     private void XAxisColumnMenuItem_SubmenuOpened(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem menuItem) return;
-        var panel = FindParentDataContext<ChartPanel>(menuItem);
+        var panel = menuItem.DataContext as ChartPanel;
         if (panel == null) return;
 
         UpdateXAxisColumnMenuItems(menuItem, panel);

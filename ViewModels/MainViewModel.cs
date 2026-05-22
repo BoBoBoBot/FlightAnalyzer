@@ -317,6 +317,14 @@ public partial class ChartPanel : ObservableObject
 
         foreach (var curve in Curves)
         {
+            // 如果当前曲线的列被用作X轴，则跳过不参与边界计算
+            if (XAxisMode == XAxisMode.ColumnBased
+                && !string.IsNullOrEmpty(XAxisColumnName)
+                && curve.Column.Name == XAxisColumnName)
+            {
+                continue;
+            }
+
             if (!curve.Column.Data.Parameters.TryGetValue(curve.Column.Name, out var values))
                 continue;
 
@@ -422,6 +430,14 @@ public partial class ChartPanel : ObservableObject
 
         foreach (var curve in Curves)
         {
+            // 如果当前曲线的列被用作X轴，则跳过不显示
+            if (XAxisMode == XAxisMode.ColumnBased
+                && !string.IsNullOrEmpty(XAxisColumnName)
+                && curve.Column.Name == XAxisColumnName)
+            {
+                continue;
+            }
+
             if (!curve.Column.Data.Parameters.TryGetValue(curve.Column.Name, out var values)) continue;
 
             int count = values.Length;
