@@ -200,15 +200,26 @@ public partial class MainWindow : Window
             var coord = panel.Plot.GetCoordinates(pixel, panel.Plot.Axes.Bottom, panel.Plot.Axes.Left);
             double mouseX = coord.X;
 
-            //更新垂直线位置
-            panel.VerticalLine.X = mouseX;
-            panel.VerticalLine.IsVisible = true;
-
             // 获取实际绘制的曲线列表（跳过被用作X轴的曲线）
             var plottedCurves = panel.Curves.Where(c =>
                 !(panel.XAxisMode == XAxisMode.ColumnBased
                   && !string.IsNullOrEmpty(panel.XAxisColumnName)
                   && c.Column.Name == panel.XAxisColumnName)).ToList();
+
+            // 如果启用了捕捉横坐标，找到最近的有原始数据的X位置
+            if (_vm != null && _vm.Settings.SnapToDataRow && plottedCurves.Count > 0)
+            {
+                double? snapX = FindNearestDataRowX(plottedCurves, mouseX);
+                if (snapX.HasValue)
+                {
+                    mouseX = snapX.Value;
+                    coord = new ScottPlot.Coordinates(mouseX, coord.Y);
+                }
+            }
+
+            //更新垂直线位置
+            panel.VerticalLine.X = mouseX;
+            panel.VerticalLine.IsVisible = true;
 
             int i = 0;
 
@@ -221,10 +232,10 @@ public partial class MainWindow : Window
                 var point = scatter.Data.GetNearestX(coord, panel.Plot.LastRender);
                 if (point.IsReal)
                 {
-                    // 原始数据：使用G格式保留原始精度，去除末尾多余的零
+                    // 原始数据：使用G格式保留原始精度，去除末尾多余的零，不加括号
                     string yStr = point.Y.ToString("G");
-                    scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
-                    curve.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
+                    scatter.LegendText = $"{curve.FileName} - {curve.Name}: {yStr}";
+                    curve.LegendText = $"{curve.FileName} - {curve.Name}: {yStr}";
                 }
                 else
                 {
@@ -232,15 +243,15 @@ public partial class MainWindow : Window
                     double? interpolatedY = InterpolateAtX(scatter, mouseX);
                     if (interpolatedY.HasValue)
                     {
-                        // 插值数据：固定显示3位小数
+                        // 插值数据：固定显示3位小数，加插值前缀和括号
                         string yStr = interpolatedY.Value.ToString("F3");
-                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {yStr}]";
-                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {yStr}]";
+                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: 插值[{yStr}]";
+                        curve.LegendText = $"{curve.FileName} - {curve.Name}: 插值[{yStr}]";
                     }
                     else
                     {
-                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [--]";
-                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [--]";
+                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: --";
+                        curve.LegendText = $"{curve.FileName} - {curve.Name}: --";
                     }
                 }
 
@@ -259,6 +270,21 @@ public partial class MainWindow : Window
                     }
                 }
                 i++;
+            }
+
+            // 同步更新被用作X轴的曲线的标签
+            if (panel.XAxisMode == XAxisMode.ColumnBased && !string.IsNullOrEmpty(panel.XAxisColumnName))
+            {
+                var xAxisCurve = panel.Curves.FirstOrDefault(c => c.Column.Name == panel.XAxisColumnName);
+                if (xAxisCurve != null)
+                {
+                    if (panel.XAxisMode == XAxisMode.ColumnBased)
+                    {
+                        int minutes = (int)(mouseX / 60);
+                        double seconds = mouseX - minutes * 60;
+                        xAxisCurve.LegendText = $"{xAxisCurve.FileName} - {xAxisCurve.Name}: {minutes:D2}:{seconds:F1}";
+                    }
+                }
             }
 
             // SyncZoom 开启时，同步所有图表的垂直线 + 图例Y值
@@ -288,7 +314,7 @@ public partial class MainWindow : Window
                         if (point.IsReal)
                         {
                             string yStr = point.Y.ToString("G");
-                            scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
+                            scatter.LegendText = $"{curve.FileName} - {curve.Name}: {yStr}";
                             curve.LegendText = scatter.LegendText;
                         }
                         else
@@ -297,12 +323,12 @@ public partial class MainWindow : Window
                             if (interpolatedY.HasValue)
                             {
                                 string yStr = interpolatedY.Value.ToString("F3");
-                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [插值 {yStr}]";
+                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: 插值[{yStr}]";
                                 curve.LegendText = scatter.LegendText;
                             }
                             else
                             {
-                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [--]";
+                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: --";
                                 curve.LegendText = scatter.LegendText;
                             }
                         }
@@ -624,6 +650,22 @@ public partial class MainWindow : Window
         return menuItem.DataContext as ChartPanel;
     }
 
+    /// <summary>
+    /// 窗口右键菜单：所有面板切换为索引模式
+    /// </summary>
+    private void AllWindows_IndexBased_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+
+        foreach (var panel in _vm.ChartPanels)
+        {
+            panel.XAxisMode = XAxisMode.IndexBased;
+            panel.XAxisColumnName = null;
+        }
+
+        _vm.StatusText = "所有图表已切换为按照索引排列";
+    }
+
     private void XAxisMode_IndexBased_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem menuItem) return;
@@ -770,6 +812,57 @@ public partial class MainWindow : Window
         if (rightY.HasValue) return rightY.Value;
 
         return null;
+    }
+
+    /// <summary>
+    /// 找到最近的有原始数据的X位置（至少有一个曲线在该位置有非NaN值）
+    /// </summary>
+    private static double? FindNearestDataRowX(List<CurveItem> curves, double targetX)
+    {
+        // 收集所有曲线的X值（唯一值）
+        var allXValues = new HashSet<double>();
+        foreach (var curve in curves)
+        {
+            if (!curve.Column.Data.Parameters.TryGetValue(curve.Column.Name, out var yValues))
+                continue;
+
+            // 获取X值
+            double[] xValues;
+            if (curve.Column.Data.Parameters.TryGetValue(curve.Column.Data.Parameters.Keys.FirstOrDefault() ?? "", out var rawXValues)
+                && rawXValues.Length == yValues.Length)
+            {
+                xValues = rawXValues;
+            }
+            else
+            {
+                xValues = Enumerable.Range(0, yValues.Length).Select(i => (double)i).ToArray();
+            }
+
+            for (int i = 0; i < xValues.Length; i++)
+            {
+                if (!double.IsNaN(xValues[i]) && !double.IsNaN(yValues[i]))
+                {
+                    allXValues.Add(xValues[i]);
+                }
+            }
+        }
+
+        if (allXValues.Count == 0) return null;
+
+        // 找到最近的X值
+        double bestX = allXValues.First();
+        double bestDist = double.MaxValue;
+        foreach (var x in allXValues)
+        {
+            double dist = Math.Abs(x - targetX);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                bestX = x;
+            }
+        }
+
+        return bestX;
     }
 
     #endregion

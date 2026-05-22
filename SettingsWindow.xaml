@@ -57,15 +57,28 @@
                     </DockPanel>
 
                     <DockPanel Margin="0,3,0,3">
-                        <TextBlock Text="对其联动" 
+                        <TextBlock Text="对其联动"
                                    HorizontalAlignment="Left"
-                                   VerticalAlignment="Center" 
-                                   FontSize="13" 
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
                                    Margin="0,0,8,0"/>
                         <CheckBox Margin="0,6,0,0"
                                   HorizontalAlignment="Right"
                                   VerticalAlignment="Bottom"
                                   IsChecked="{Binding SyncZoom}"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="0,3,0,3">
+                        <TextBlock Text="捕捉数据行"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   Margin="0,0,8,0"
+                                   ToolTip="鼠标位置必须对应一行原始数据（至少有一个非插值点）"/>
+                        <CheckBox Margin="0,6,0,0"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Bottom"
+                                  IsChecked="{Binding SnapToDataRow}"/>
                     </DockPanel>
 
 

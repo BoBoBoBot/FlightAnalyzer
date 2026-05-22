@@ -22,6 +22,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private float _frameIntervalMs = 20;
 
+    /// <summary>鼠标捕捉横坐标：必须对应一行原始数据（至少有一个非插值点）</summary>
+    [ObservableProperty]
+    private bool _snapToDataRow;
+
     /// <summary>帧间隔变化后触发</summary>
     public event Action? FrameIntervalChanged;
 

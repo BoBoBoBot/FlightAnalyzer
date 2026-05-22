@@ -14,11 +14,13 @@ public partial class SettingsWindowViewModel : ObservableObject
     private readonly bool _originalSyncZoom;
     private readonly int _originalPanelCount;
     private readonly float _originalFrameIntervalMs;
+    private readonly bool _originalSnapToDataRow;
 
     [ObservableProperty] private string _themeMode = "System";
     [ObservableProperty] private bool _syncZoom;
     [ObservableProperty] private int _panelCount = 2;
     [ObservableProperty] private float _frameIntervalMs = 20;
+    [ObservableProperty] private bool _snapToDataRow;
 
     public int[] PanelCountOptions { get; } = [1, 2, 4, 6];
 
@@ -33,12 +35,14 @@ public partial class SettingsWindowViewModel : ObservableObject
         _syncZoom = mainVm.SyncZoom;
         _panelCount = mainVm.PanelCount;
         _frameIntervalMs = mainVm.Settings.FrameIntervalMs;
+        _snapToDataRow = mainVm.Settings.SnapToDataRow;
 
         // 保存原始值
         _originalTheme = _themeMode;
         _originalSyncZoom = _syncZoom;
         _originalPanelCount = _panelCount;
         _originalFrameIntervalMs = _frameIntervalMs;
+        _originalSnapToDataRow = _snapToDataRow;
     }
 
     #region 属性变化 → 实时同步到主 ViewModel
@@ -67,6 +71,11 @@ public partial class SettingsWindowViewModel : ObservableObject
         _mainVm.Settings.FrameIntervalMs = value;
     }
 
+    partial void OnSnapToDataRowChanged(bool value)
+    {
+        _mainVm.Settings.SnapToDataRow = value;
+    }
+
     #endregion
 
     #region 确定 / 取消
@@ -88,6 +97,7 @@ public partial class SettingsWindowViewModel : ObservableObject
         _mainVm.PanelCount = _originalPanelCount;
         _mainVm.Settings.PanelCount = _originalPanelCount;
         _mainVm.Settings.FrameIntervalMs = _originalFrameIntervalMs;
+        _mainVm.Settings.SnapToDataRow = _originalSnapToDataRow;
         _mainWindow.ApplyAppTheme(_originalTheme);
         _settingsWin.Close();
     }

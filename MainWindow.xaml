@@ -9,6 +9,11 @@
     <Window.DataContext>
         <vm:MainViewModel />
     </Window.DataContext>
+    <Window.ContextMenu>
+        <ContextMenu>
+            <MenuItem Header="全部按索引排列" Click="AllWindows_IndexBased_Click" FontSize="13"/>
+        </ContextMenu>
+    </Window.ContextMenu>
 
     <Grid Margin="8">
         <Grid.RowDefinitions>
@@ -210,17 +215,12 @@
                                     Drop="ChartArea_Drop">
                                 <Border.ContextMenu>
                                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                        <MenuItem Header="X轴设置" FontSize="13">
-                                            <MenuItem.Icon>
-                                                <TextBlock FontFamily="{StaticResource SymbolThemeFontFamily}" Text="&#xE8F1;"/>
-                                            </MenuItem.Icon>
-                                            <MenuItem Header="按照索引排列"
-                                                      Click="XAxisMode_IndexBased_Click"
-                                                      FontSize="13"/>
-                                            <MenuItem Header="按照该列排列"
-                                                      Click="XAxisMode_ColumnBased_Click"
-                                                      FontSize="13"/>
-                                        </MenuItem>
+                                        <MenuItem Header="按索引排列"
+                                                  Click="XAxisMode_IndexBased_Click"
+                                                  FontSize="13"/>
+                                        <MenuItem Header="按该列排列"
+                                                  Click="XAxisMode_ColumnBased_Click"
+                                                  FontSize="13"/>
                                     </ContextMenu>
                                 </Border.ContextMenu>
                                 <Grid>
