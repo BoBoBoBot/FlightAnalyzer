@@ -16,6 +16,7 @@
 - 每个面板可添加多条曲线
 - 自动配色（12 色调色板）
 - 深色/浅色/系统主题切换
+<img width="1483" height="930" alt="image" src="https://github.com/user-attachments/assets/b372fb14-e816-4320-bf49-081529c7769d" />
 
 ### X 轴模式
 - **按照索引排列**：基于点索引的等间隔时间轴
@@ -28,6 +29,7 @@
 - 拖拽列名到图表添加曲线
 - 曲线图例显示文件名和列名
 - 曲线一键删除
+<img width="520" height="615" alt="image" src="https://github.com/user-attachments/assets/c84ce373-d072-463e-8d5b-aa61720c5234" />
 
 ### 其他
 - 搜索过滤列名
