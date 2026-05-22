@@ -243,10 +243,10 @@ public partial class MainWindow : Window
                     double? interpolatedY = InterpolateAtX(scatter, mouseX);
                     if (interpolatedY.HasValue)
                     {
-                        // 插值数据：固定显示3位小数，加插值前缀和括号
+                        // 插值数据：固定显示3位小数，加括号
                         string yStr = interpolatedY.Value.ToString("F3");
-                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: 插值[{yStr}]";
-                        curve.LegendText = $"{curve.FileName} - {curve.Name}: 插值[{yStr}]";
+                        scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
+                        curve.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
                     }
                     else
                     {
@@ -323,7 +323,7 @@ public partial class MainWindow : Window
                             if (interpolatedY.HasValue)
                             {
                                 string yStr = interpolatedY.Value.ToString("F3");
-                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: 插值[{yStr}]";
+                                scatter.LegendText = $"{curve.FileName} - {curve.Name}: [{yStr}]";
                                 curve.LegendText = scatter.LegendText;
                             }
                             else

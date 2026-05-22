@@ -503,9 +503,29 @@ public partial class ChartPanel : ObservableObject
             }
             else
             {
-                // 默认索引模式
-                xData = GenerateIndexBasedXData(values.Length);
-                yData = values;
+                // 默认索引模式：过滤NaN值
+                var filteredIndices = new List<int>();
+                for (int i = 0; i < values.Length; i++)
+                {
+                    if (!double.IsNaN(values[i]))
+                        filteredIndices.Add(i);
+                }
+
+                if (filteredIndices.Count >= 2)
+                {
+                    xData = new double[filteredIndices.Count];
+                    yData = new double[filteredIndices.Count];
+                    for (int j = 0; j < filteredIndices.Count; j++)
+                    {
+                        int idx = filteredIndices[j];
+                        xData[j] = idx * _sampleIntervalSec;
+                        yData[j] = values[idx];
+                    }
+                }
+                else
+                {
+                    continue; // 有效点不足，跳过此曲线
+                }
             }
 
             var scatter = Plot.Add.Scatter(xData, yData);
