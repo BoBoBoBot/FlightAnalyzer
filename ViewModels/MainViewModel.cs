@@ -74,6 +74,17 @@ public partial class CurveItem : ObservableObject
 }
 
 /// <summary>
+/// X轴模式
+/// </summary>
+public enum XAxisMode
+{
+    /// <summary>基于点索引（当前默认模式）</summary>
+    IndexBased,
+    /// <summary>使用指定列作为X轴</summary>
+    ColumnBased
+}
+
+/// <summary>
 /// 单个图表面板
 /// </summary>
 public partial class ChartPanel : ObservableObject
@@ -86,6 +97,14 @@ public partial class ChartPanel : ObservableObject
     public ScottPlot.Plottables.Text? MyHighlightText { get; set; }//十字架点值
     public ScottPlot.Plottables.VerticalLine? VerticalLine { get; set; }//垂直线条
 
+    [ObservableProperty]
+    private XAxisMode _xAxisMode = XAxisMode.IndexBased;
+
+    [ObservableProperty]
+    private string? _xAxisColumnName;
+
+    /// <summary>可用的X轴列名列表（从当前曲线关联的文件中收集）</summary>
+    public ObservableCollection<string> AvailableXAxisColumns { get; } = new();
 
     public event Action? RefreshRequested;
 
@@ -135,6 +154,7 @@ public partial class ChartPanel : ObservableObject
         };
 
         Curves.Add(curve);
+        UpdateAvailableXAxisColumns();
         OnPropertyChanged(nameof(DisplayText));
         Refresh();
     }
@@ -142,6 +162,7 @@ public partial class ChartPanel : ObservableObject
     public void RemoveCurve(CurveItem curve)
     {
         Curves.Remove(curve);
+        UpdateAvailableXAxisColumns();
         OnPropertyChanged(nameof(DisplayText));
         Refresh();
     }
@@ -149,6 +170,7 @@ public partial class ChartPanel : ObservableObject
     public void ClearCurves()
     {
         Curves.Clear();
+        UpdateAvailableXAxisColumns();
         OnPropertyChanged(nameof(DisplayText));
         Refresh();
     }
@@ -157,6 +179,213 @@ public partial class ChartPanel : ObservableObject
     public void RequestRender()
     {
         RefreshRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// 更新可用的X轴列名列表（从当前曲线关联的文件中收集）
+    /// </summary>
+    public void UpdateAvailableXAxisColumns()
+    {
+        AvailableXAxisColumns.Clear();
+        var seenColumns = new HashSet<string>();
+
+        foreach (var curve in Curves)
+        {
+            foreach (var colName in curve.Column.Data.Parameters.Keys)
+            {
+                if (seenColumns.Add(colName))
+                    AvailableXAxisColumns.Add(colName);
+            }
+        }
+
+        // 如果当前选中的X轴列不在可用列表中，清空选择
+        if (!string.IsNullOrEmpty(XAxisColumnName) && !AvailableXAxisColumns.Contains(XAxisColumnName))
+        {
+            XAxisColumnName = null;
+        }
+    }
+
+    /// <summary>
+    /// 生成基于点索引的X轴数据（默认模式）
+    /// </summary>
+    private double[] GenerateIndexBasedXData(int count)
+    {
+        return Enumerable.Range(0, count).Select(i => (double)i * _sampleIntervalSec).ToArray();
+    }
+
+    /// <summary>
+    /// 检查X轴列是否有有效数据（非全NaN）
+    /// </summary>
+    private bool HasValidXAxisData(ColumnNode column, string? xAxisColumnName)
+    {
+        if (string.IsNullOrEmpty(xAxisColumnName))
+            return false;
+
+        if (!column.Data.Parameters.TryGetValue(xAxisColumnName, out var xValues))
+            return false;
+
+        // 检查是否有至少2个非NaN值
+        int validCount = 0;
+        for (int i = 0; i < xValues.Length && validCount < 2; i++)
+        {
+            if (!double.IsNaN(xValues[i]))
+                validCount++;
+        }
+
+        return validCount >= 2;
+    }
+
+    /// <summary>
+    /// 生成时间刻度位置（用于X轴格式化）
+    /// </summary>
+    private double[] GenerateTimeTickPositions()
+    {
+        if (Curves.Count == 0) return [];
+
+        // 找到所有曲线的X轴范围
+        double minX = double.MaxValue;
+        double maxX = double.MinValue;
+
+        foreach (var curve in Curves)
+        {
+            if (!curve.Column.Data.Parameters.TryGetValue(XAxisColumnName ?? "", out var xValues))
+                continue;
+
+            foreach (var v in xValues)
+            {
+                if (!double.IsNaN(v))
+                {
+                    minX = Math.Min(minX, v);
+                    maxX = Math.Max(maxX, v);
+                }
+            }
+        }
+
+        if (minX > maxX) return [];
+
+        // 生成刻度位置（大约8-12个刻度）
+        double range = maxX - minX;
+        double step = range / 10;
+        // 调整step为合适的值
+        if (step > 60) step = Math.Ceiling(step / 60) * 60; // 整分钟
+        else if (step > 10) step = Math.Ceiling(step / 10) * 10; // 整10秒
+        else if (step > 1) step = Math.Ceiling(step); // 整秒
+        else step = Math.Ceiling(step * 10) / 10; // 0.1秒
+
+        var positions = new List<double>();
+        double pos = Math.Ceiling(minX / step) * step;
+        while (pos <= maxX)
+        {
+            positions.Add(pos);
+            pos += step;
+        }
+
+        return positions.ToArray();
+    }
+
+    /// <summary>
+    /// 生成时间刻度标签（MM:SS.s 格式）
+    /// </summary>
+    private string[] GenerateTimeTickLabels()
+    {
+        var positions = GenerateTimeTickPositions();
+        var labels = new string[positions.Length];
+
+        for (int i = 0; i < positions.Length; i++)
+        {
+            double seconds = positions[i];
+            int minutes = (int)(seconds / 60);
+            double remainingSeconds = seconds - minutes * 60;
+            labels[i] = $"{minutes:D2}:{remainingSeconds:F1}";
+        }
+
+        return labels;
+    }
+
+    /// <summary>
+    /// 计算所有显示曲线的数据边界（最大包围盒）
+    /// </summary>
+    private (double Left, double Right, double Bottom, double Top)? CalculateDataBounds()
+    {
+        if (Curves.Count == 0) return null;
+
+        double minX = double.MaxValue;
+        double maxX = double.MinValue;
+        double minY = double.MaxValue;
+        double maxY = double.MinValue;
+        bool hasData = false;
+
+        foreach (var curve in Curves)
+        {
+            if (!curve.Column.Data.Parameters.TryGetValue(curve.Column.Name, out var values))
+                continue;
+
+            // 获取X轴数据
+            double[] xValues;
+            bool useColumnBased = XAxisMode == XAxisMode.ColumnBased
+                && !string.IsNullOrEmpty(XAxisColumnName)
+                && HasValidXAxisData(curve.Column, XAxisColumnName);
+
+            if (useColumnBased && curve.Column.Data.Parameters.TryGetValue(XAxisColumnName!, out var rawXValues))
+            {
+                // 使用指定列，需要考虑NaN过滤
+                var filteredX = new List<double>();
+                var filteredY = new List<double>();
+                int len = Math.Min(rawXValues.Length, values.Length);
+                for (int i = 0; i < len; i++)
+                {
+                    if (!double.IsNaN(rawXValues[i]) && !double.IsNaN(values[i]))
+                    {
+                        filteredX.Add(rawXValues[i]);
+                        filteredY.Add(values[i]);
+                    }
+                }
+                xValues = filteredX.ToArray();
+                values = filteredY.ToArray();
+            }
+            else
+            {
+                // 使用索引模式
+                xValues = Enumerable.Range(0, values.Length).Select(i => (double)i * _sampleIntervalSec).ToArray();
+            }
+
+            // 更新边界
+            for (int i = 0; i < xValues.Length; i++)
+            {
+                if (!double.IsNaN(xValues[i]) && !double.IsNaN(values[i]))
+                {
+                    minX = Math.Min(minX, xValues[i]);
+                    maxX = Math.Max(maxX, xValues[i]);
+                    minY = Math.Min(minY, values[i]);
+                    maxY = Math.Max(maxY, values[i]);
+                    hasData = true;
+                }
+            }
+        }
+
+        if (!hasData) return null;
+
+        // 添加一些边距（5%）
+        double paddingX = (maxX - minX) * 0.05;
+        double paddingY = (maxY - minY) * 0.05;
+        if (paddingX < 0.001) paddingX = 0.1; // 最小边距
+        if (paddingY < 0.001) paddingY = 0.1;
+
+        return (minX - paddingX, maxX + paddingX, minY - paddingY, maxY + paddingY);
+    }
+
+    /// <summary>
+    /// 从Y数据数组中过滤NaN值，返回有效点的索引列表
+    /// </summary>
+    private static List<int> GetValidIndices(double[] data)
+    {
+        var indices = new List<int>();
+        for (int i = 0; i < data.Length; i++)
+        {
+            if (!double.IsNaN(data[i]))
+                indices.Add(i);
+        }
+        return indices;
     }
 
     public void Refresh(bool suppressAutoScale = false)
@@ -168,7 +397,6 @@ public partial class ChartPanel : ObservableObject
         // 先应用主题颜色
         if (IsDark)
         {
-
             Plot.FigureBackground.Color = ScottPlot.Colors.Transparent;
             Plot.DataBackground.Color = ScottPlot.Colors.Transparent;
             Plot.Axes.Color(ScottPlot.Color.FromHex("#d0d0d0"));
@@ -199,22 +427,67 @@ public partial class ChartPanel : ObservableObject
             int count = values.Length;
             double[] xData, yData;
 
-            // 超过1万点就降采样，提升渲染性能
-            if (count > 10000)
+            // 根据XAxisMode生成X轴数据
+            bool useColumnBased = XAxisMode == XAxisMode.ColumnBased
+                && !string.IsNullOrEmpty(XAxisColumnName)
+                && HasValidXAxisData(curve.Column, XAxisColumnName);
+
+            if (useColumnBased)
             {
-                int step = Math.Max(1, count / 10000);
-                int newLen = count / step;
-                xData = new double[newLen];
-                yData = new double[newLen];
-                for (int i = 0; i < newLen; i++)
+                // 使用指定列作为X轴
+                if (curve.Column.Data.Parameters.TryGetValue(XAxisColumnName, out var xValues))
                 {
-                    xData[i] = i * step * _sampleIntervalSec;
-                    yData[i] = values[i * step];
+                    // 过滤NaN/空值：跳过X或Y为NaN的点
+                    var filteredX = new List<double>();
+                    var filteredY = new List<double>();
+                    int len = Math.Min(xValues.Length, values.Length);
+                    for (int i = 0; i < len; i++)
+                    {
+                        if (!double.IsNaN(xValues[i]) && !double.IsNaN(values[i]))
+                        {
+                            filteredX.Add(xValues[i]);
+                            filteredY.Add(values[i]);
+                        }
+                    }
+
+                    if (filteredX.Count >= 2) // 至少2个有效点才显示
+                    {
+                        xData = filteredX.ToArray();
+                        yData = filteredY.ToArray();
+
+                        // 超过1万点就降采样，提升渲染性能
+                        if (xData.Length > 10000)
+                        {
+                            int step = Math.Max(1, xData.Length / 10000);
+                            int newLen = xData.Length / step;
+                            var sampledX = new double[newLen];
+                            var sampledY = new double[newLen];
+                            for (int i = 0; i < newLen; i++)
+                            {
+                                sampledX[i] = xData[i * step];
+                                sampledY[i] = yData[i * step];
+                            }
+                            xData = sampledX;
+                            yData = sampledY;
+                        }
+                    }
+                    else
+                    {
+                        // 有效点不足，跳过此曲线
+                        continue;
+                    }
+                }
+                else
+                {
+                    // 指定列不存在，回退到索引模式
+                    xData = GenerateIndexBasedXData(values.Length);
+                    yData = values;
                 }
             }
             else
             {
-                xData = Enumerable.Range(0, count).Select(i => (double)i * _sampleIntervalSec).ToArray();
+                // 默认索引模式
+                xData = GenerateIndexBasedXData(values.Length);
                 yData = values;
             }
 
@@ -238,7 +511,34 @@ public partial class ChartPanel : ObservableObject
         Plot.Axes.Left.Label.FontSize = 12;
 
         Plot.Axes.Bottom.Label.FontName = "Microsoft YaHei UI";
-        Plot.Axes.Bottom.Label.Text = "时间 (s)";
+        // 根据X轴模式设置标签（检查是否有有效数据）
+        bool anyCurveUsesColumn = false;
+        if (XAxisMode == XAxisMode.ColumnBased && !string.IsNullOrEmpty(XAxisColumnName))
+        {
+            foreach (var curve in Curves)
+            {
+                if (HasValidXAxisData(curve.Column, XAxisColumnName))
+                {
+                    anyCurveUsesColumn = true;
+                    break;
+                }
+            }
+        }
+
+        if (anyCurveUsesColumn)
+        {
+            Plot.Axes.Bottom.Label.Text = XAxisColumnName;
+            // 设置自定义刻度格式化器，显示 MM:SS.s 格式
+            var tickPositions = GenerateTimeTickPositions();
+            var tickLabels = GenerateTimeTickLabels();
+            Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(tickPositions, tickLabels);
+        }
+        else
+        {
+            Plot.Axes.Bottom.Label.Text = "索引";
+            // 使用自动数字刻度生成器
+            Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericAutomatic();
+        }
         Plot.Font.Automatic();//图标如果有中文必须刷新一次
 
 
@@ -271,11 +571,32 @@ public partial class ChartPanel : ObservableObject
         VerticalLine.Color = ScottPlot.Color.FromHex("#ff1238");
 
         if (!suppressAutoScale)
-            Plot.Axes.AutoScale();
+        {
+            // 计算所有曲线的最大包围盒并设置轴范围
+            var bounds = CalculateDataBounds();
+            if (bounds.HasValue)
+            {
+                Plot.Axes.SetLimits(bounds.Value.Left, bounds.Value.Right, bounds.Value.Bottom, bounds.Value.Top);
+            }
+            else
+            {
+                Plot.Axes.AutoScale();
+            }
+        }
 
         Plot.Legend.IsVisible = false;
 
         RefreshRequested?.Invoke();
+    }
+
+    partial void OnXAxisModeChanged(XAxisMode value)
+    {
+        Refresh();
+    }
+
+    partial void OnXAxisColumnNameChanged(string? value)
+    {
+        Refresh();
     }
 }
 

@@ -208,6 +208,29 @@
                                     DragOver="ChartArea_DragOver"
                                     DragLeave="ChartArea_DragLeave"
                                     Drop="ChartArea_Drop">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="X轴设置" FontSize="13">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{StaticResource SymbolThemeFontFamily}" Text="&#xE8F1;"/>
+                                            </MenuItem.Icon>
+                                            <MenuItem Header="按照索引排列" 
+                                                      Click="XAxisMode_IndexBased_Click"
+                                                      FontSize="13"/>
+                                            <MenuItem Header="按照该列排列" 
+                                                      Click="XAxisMode_ColumnBased_Click"
+                                                      FontSize="13"/>
+                                            <Separator/>
+                                            <MenuItem Header="选择X轴列" FontSize="13" x:Name="XAxisColumnMenuItem"
+                                                      SubmenuOpened="XAxisColumnMenuItem_SubmenuOpened">
+                                                <MenuItem.Icon>
+                                                    <TextBlock FontFamily="{StaticResource SymbolThemeFontFamily}" Text="&#xE8F1;"/>
+                                                </MenuItem.Icon>
+                                                <!-- 子菜单项将在代码中动态生成 -->
+                                            </MenuItem>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </Border.ContextMenu>
                                 <Grid>
                                     <!-- 图表 -->
                                     <scottplot:WpfPlot Grid.Row="0"

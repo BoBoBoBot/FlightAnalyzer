@@ -73,10 +73,20 @@ public class CsvFlightImportService : IFlightImportService
             var values = line.Split(delimiter);
             for (int i = 0; i < headers.Count && i < values.Length; i++)
             {
-                if (double.TryParse(values[i].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                string trimmed = values[i].Trim();
+                if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                {
                     columnData[headers[i]].Add(val);
+                }
                 else
-                    columnData[headers[i]].Add(double.NaN);
+                {
+                    // 尝试解析时间格式 (MM:SS.s 或 MM:SS.ss)
+                    double? timeVal = ParseTimeString(trimmed);
+                    if (timeVal.HasValue)
+                        columnData[headers[i]].Add(timeVal.Value);
+                    else
+                        columnData[headers[i]].Add(double.NaN);
+                }
             }
 
             bytesRead += encoding.GetByteCount(line) + 2;
@@ -135,6 +145,28 @@ public class CsvFlightImportService : IFlightImportService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 解析时间格式字符串 (MM:SS.s 或 MM:SS.ss) 为秒数
+    /// </summary>
+    private static double? ParseTimeString(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return null;
+
+        // 支持格式: MM:SS.s, MM:SS.ss, MM:SS
+        var parts = input.Split(':');
+        if (parts.Length == 2)
+        {
+            if (int.TryParse(parts[0], out int minutes) &&
+                double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out double seconds))
+            {
+                return minutes * 60.0 + seconds;
+            }
+        }
+
+        return null;
     }
 
     private static char DetectDelimiter(string headerLine)

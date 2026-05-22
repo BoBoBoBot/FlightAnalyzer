@@ -216,10 +216,19 @@ public partial class MainWindow : Window
 
                     panel.Curves[i].LegendText = $"{panel.Curves[i].FileName} - {panel.Curves[i].Name}: [{point.Y:F2}]";
 
-
-                    //panel.VerticalLine.LabelText = $"{(coord.X):N0}"; //x轴实际的值
-
-                    panel.VerticalLine.LabelText = TimeSpan.FromSeconds(coord.X).ToString(@"hh\:mm\:ss"); //转换成分钟
+                    // 根据X轴模式格式化标签
+                    if (panel.XAxisMode == XAxisMode.ColumnBased && !string.IsNullOrEmpty(panel.XAxisColumnName))
+                    {
+                        // 时间列模式：显示 MM:SS.s 格式
+                        int minutes = (int)(coord.X / 60);
+                        double seconds = coord.X - minutes * 60;
+                        panel.VerticalLine.LabelText = $"{minutes:D2}:{seconds:F1}";
+                    }
+                    else
+                    {
+                        // 索引模式：显示索引值
+                        panel.VerticalLine.LabelText = $"索引 {coord.X:F1}";
+                    }
                 }
                 else
                 {
@@ -557,6 +566,90 @@ public partial class MainWindow : Window
 
         if (_vm != null)
             _vm.StatusText = $"已移除: {curve.Name}";
+    }
+
+    #endregion
+
+    #region X轴设置
+
+    private void XAxisMode_IndexBased_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem) return;
+        var panel = FindParentDataContext<ChartPanel>(menuItem);
+        if (panel == null) return;
+
+        panel.XAxisMode = XAxisMode.IndexBased;
+        panel.XAxisColumnName = null;
+        if (_vm != null)
+            _vm.StatusText = $"{panel.Title}: X轴已切换为按照索引排列";
+    }
+
+    private void XAxisMode_ColumnBased_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem) return;
+        var panel = FindParentDataContext<ChartPanel>(menuItem);
+        if (panel == null) return;
+
+        panel.XAxisMode = XAxisMode.ColumnBased;
+
+        // 如果还没有选择X轴列，尝试使用第一个可用列
+        if (string.IsNullOrEmpty(panel.XAxisColumnName) && panel.AvailableXAxisColumns.Count > 0)
+        {
+            panel.XAxisColumnName = panel.AvailableXAxisColumns[0];
+        }
+
+        if (_vm != null)
+            _vm.StatusText = $"{panel.Title}: X轴已切换为按照该列排列 (当前列: {panel.XAxisColumnName ?? "未选择"})";
+    }
+
+    /// <summary>
+    /// 动态生成X轴列选择子菜单项
+    /// </summary>
+    private void UpdateXAxisColumnMenuItems(MenuItem parentMenuItem, ChartPanel panel)
+    {
+        parentMenuItem.Items.Clear();
+
+        foreach (var colName in panel.AvailableXAxisColumns)
+        {
+            var item = new MenuItem
+            {
+                Header = colName,
+                FontSize = 13,
+                IsCheckable = true,
+                IsChecked = colName == panel.XAxisColumnName
+            };
+            item.Click += (_, _) =>
+            {
+                panel.XAxisMode = XAxisMode.ColumnBased;
+                panel.XAxisColumnName = colName;
+                if (_vm != null)
+                    _vm.StatusText = $"{panel.Title}: X轴列已设置为 {colName}";
+            };
+            parentMenuItem.Items.Add(item);
+        }
+
+        if (panel.AvailableXAxisColumns.Count == 0)
+        {
+            var emptyItem = new MenuItem
+            {
+                Header = "无可用列（请先添加曲线）",
+                IsEnabled = false,
+                FontSize = 13
+            };
+            parentMenuItem.Items.Add(emptyItem);
+        }
+    }
+
+    /// <summary>
+    /// 右键菜单打开前更新X轴列选项
+    /// </summary>
+    private void XAxisColumnMenuItem_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem) return;
+        var panel = FindParentDataContext<ChartPanel>(menuItem);
+        if (panel == null) return;
+
+        UpdateXAxisColumnMenuItems(menuItem, panel);
     }
 
     #endregion
