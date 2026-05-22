@@ -610,57 +610,6 @@ public partial class MainWindow : Window
             _vm.StatusText = $"{panel.Title}: X轴已切换为按照该列排列 (当前列: {panel.XAxisColumnName ?? "未选择"})";
     }
 
-    /// <summary>
-    /// 动态生成X轴列选择子菜单项
-    /// </summary>
-    private void UpdateXAxisColumnMenuItems(MenuItem parentMenuItem, ChartPanel panel)
-    {
-        parentMenuItem.Items.Clear();
-
-        foreach (var colName in panel.AvailableXAxisColumns)
-        {
-            var item = new MenuItem
-            {
-                Header = colName,
-                FontSize = 13,
-                IsCheckable = true,
-                IsChecked = colName == panel.XAxisColumnName,
-                DataContext = panel
-            };
-            item.Click += (_, _) =>
-            {
-                panel.XAxisMode = XAxisMode.ColumnBased;
-                panel.XAxisColumnName = colName;
-                if (_vm != null)
-                    _vm.StatusText = $"{panel.Title}: X轴列已设置为 {colName}";
-            };
-            parentMenuItem.Items.Add(item);
-        }
-
-        if (panel.AvailableXAxisColumns.Count == 0)
-        {
-            var emptyItem = new MenuItem
-            {
-                Header = "无可用列（请先添加曲线）",
-                IsEnabled = false,
-                FontSize = 13
-            };
-            parentMenuItem.Items.Add(emptyItem);
-        }
-    }
-
-    /// <summary>
-    /// 右键菜单打开前更新X轴列选项
-    /// </summary>
-    private void XAxisColumnMenuItem_SubmenuOpened(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem menuItem) return;
-        var panel = menuItem.DataContext as ChartPanel;
-        if (panel == null) return;
-
-        UpdateXAxisColumnMenuItems(menuItem, panel);
-    }
-
     #endregion
 
     #region 搜索过滤
