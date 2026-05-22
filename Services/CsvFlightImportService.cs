@@ -148,16 +148,28 @@ public class CsvFlightImportService : IFlightImportService
     }
 
     /// <summary>
-    /// 解析时间格式字符串 (MM:SS.s 或 MM:SS.ss) 为秒数
+    /// 解析时间格式字符串为秒数
+    /// 支持格式: HH:MM:SS.sss, MM:SS.s, MM:SS.ss, MM:SS
     /// </summary>
     private static double? ParseTimeString(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
             return null;
 
-        // 支持格式: MM:SS.s, MM:SS.ss, MM:SS
         var parts = input.Split(':');
-        if (parts.Length == 2)
+
+        // HH:MM:SS.sss 格式（3个部分）
+        if (parts.Length == 3)
+        {
+            if (int.TryParse(parts[0], out int hours) &&
+                int.TryParse(parts[1], out int minutes) &&
+                double.TryParse(parts[2], NumberStyles.Any, CultureInfo.InvariantCulture, out double seconds))
+            {
+                return hours * 3600.0 + minutes * 60.0 + seconds;
+            }
+        }
+        // MM:SS.s 格式（2个部分）
+        else if (parts.Length == 2)
         {
             if (int.TryParse(parts[0], out int minutes) &&
                 double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out double seconds))
