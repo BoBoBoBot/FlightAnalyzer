@@ -26,6 +26,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _snapToDataRow;
 
+    /// <summary>显示数据点标记</summary>
+    [ObservableProperty]
+    private bool _showDataPoints = true;
+
+    /// <summary>数据点标记大小</summary>
+    [ObservableProperty]
+    private float _dataPointSize = 3.2f;
+
     /// <summary>帧间隔变化后触发</summary>
     public event Action? FrameIntervalChanged;
 

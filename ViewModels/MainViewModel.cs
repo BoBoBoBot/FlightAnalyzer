@@ -532,7 +532,17 @@ public partial class ChartPanel : ObservableObject
             scatter.LegendText = $"{curve.FileName} - {curve.Name}";
             scatter.Color = curve.Color;
             scatter.LineWidth = 1.2f;
-            scatter.MarkerSize = 0;
+            // 根据设置决定是否显示数据点标记
+            bool showPoints = Parent?.Settings.ShowDataPoints ?? true;
+            if (showPoints)
+            {
+                scatter.MarkerSize = Parent?.Settings.DataPointSize ?? 3.2f;
+                scatter.MarkerShape = ScottPlot.MarkerShape.FilledCircle;
+            }
+            else
+            {
+                scatter.MarkerSize = 0;
+            }
         }
 
         Plot.Title("");
@@ -572,7 +582,7 @@ public partial class ChartPanel : ObservableObject
         }
         else
         {
-            Plot.Axes.Bottom.Label.Text = "索引";
+            Plot.Axes.Bottom.Label.Text = "Index";
             // 使用自动数字刻度生成器
             Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericAutomatic();
         }

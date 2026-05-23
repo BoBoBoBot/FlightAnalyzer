@@ -15,12 +15,16 @@ public partial class SettingsWindowViewModel : ObservableObject
     private readonly int _originalPanelCount;
     private readonly float _originalFrameIntervalMs;
     private readonly bool _originalSnapToDataRow;
+    private readonly bool _originalShowDataPoints;
+    private readonly float _originalDataPointSize;
 
     [ObservableProperty] private string _themeMode = "System";
     [ObservableProperty] private bool _syncZoom;
     [ObservableProperty] private int _panelCount = 2;
     [ObservableProperty] private float _frameIntervalMs = 20;
     [ObservableProperty] private bool _snapToDataRow;
+    [ObservableProperty] private bool _showDataPoints = true;
+    [ObservableProperty] private float _dataPointSize = 3.2f;
 
     public int[] PanelCountOptions { get; } = [1, 2, 4, 6];
 
@@ -36,6 +40,8 @@ public partial class SettingsWindowViewModel : ObservableObject
         _panelCount = mainVm.PanelCount;
         _frameIntervalMs = mainVm.Settings.FrameIntervalMs;
         _snapToDataRow = mainVm.Settings.SnapToDataRow;
+        _showDataPoints = mainVm.Settings.ShowDataPoints;
+        _dataPointSize = mainVm.Settings.DataPointSize;
 
         // 保存原始值
         _originalTheme = _themeMode;
@@ -43,6 +49,8 @@ public partial class SettingsWindowViewModel : ObservableObject
         _originalPanelCount = _panelCount;
         _originalFrameIntervalMs = _frameIntervalMs;
         _originalSnapToDataRow = _snapToDataRow;
+        _originalShowDataPoints = _showDataPoints;
+        _originalDataPointSize = _dataPointSize;
     }
 
     #region 属性变化 → 实时同步到主 ViewModel
@@ -76,6 +84,16 @@ public partial class SettingsWindowViewModel : ObservableObject
         _mainVm.Settings.SnapToDataRow = value;
     }
 
+    partial void OnShowDataPointsChanged(bool value)
+    {
+        _mainVm.Settings.ShowDataPoints = value;
+    }
+
+    partial void OnDataPointSizeChanged(float value)
+    {
+        _mainVm.Settings.DataPointSize = value;
+    }
+
     #endregion
 
     #region 确定 / 取消
@@ -98,6 +116,8 @@ public partial class SettingsWindowViewModel : ObservableObject
         _mainVm.Settings.PanelCount = _originalPanelCount;
         _mainVm.Settings.FrameIntervalMs = _originalFrameIntervalMs;
         _mainVm.Settings.SnapToDataRow = _originalSnapToDataRow;
+        _mainVm.Settings.ShowDataPoints = _originalShowDataPoints;
+        _mainVm.Settings.DataPointSize = _originalDataPointSize;
         _mainWindow.ApplyAppTheme(_originalTheme);
         _settingsWin.Close();
     }

@@ -81,6 +81,42 @@
                                   IsChecked="{Binding SnapToDataRow}"/>
                     </DockPanel>
 
+                    <DockPanel Margin="0,3,0,3">
+                        <TextBlock Text="显示数据点"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   Margin="0,0,8,0"
+                                   ToolTip="在折线上显示实际数据点标记"/>
+                        <CheckBox Margin="0,6,0,0"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Bottom"
+                                  IsChecked="{Binding ShowDataPoints}"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="0,3,0,3">
+                        <TextBlock Text="数据点大小"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   Margin="0,0,8,0"
+                                   ToolTip="调整图表中数据点的大小"/>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right">
+                            <Slider Width="100"
+                                    Minimum="1"
+                                    Maximum="10"
+                                    TickFrequency="0.5"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding DataPointSize, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="{Binding DataPointSize, StringFormat=F1}"
+                                       Width="30"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0,0,0"
+                                       FontSize="12"/>
+                        </StackPanel>
+                    </DockPanel>
+
 
                 </StackPanel>
             </Expander>

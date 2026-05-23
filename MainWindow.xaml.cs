@@ -266,7 +266,8 @@ public partial class MainWindow : Window
                     }
                     else
                     {
-                        panel.VerticalLine.LabelText = $"索引 {coord.X:F1}";
+                        // 索引模式：直接显示数值，避免中文编码问题
+                        panel.VerticalLine.LabelText = coord.X.ToString("F1");
                     }
                 }
                 i++;
@@ -819,6 +820,8 @@ public partial class MainWindow : Window
     /// </summary>
     private static double? FindNearestDataRowX(ChartPanel panel, List<CurveItem> curves, double targetX)
     {
+        double sampleInterval = panel.Parent?.Settings.FrameIntervalMs / 1000.0 ?? 0.02;
+
         // 收集所有曲线的X值（唯一值）
         var allXValues = new HashSet<double>();
         foreach (var curve in curves)
@@ -838,8 +841,8 @@ public partial class MainWindow : Window
             }
             else
             {
-                // 索引模式：使用索引值
-                xValues = Enumerable.Range(0, yValues.Length).Select(i => (double)i).ToArray();
+                // 索引模式：使用 索引 * 间隔时间
+                xValues = Enumerable.Range(0, yValues.Length).Select(i => (double)i * sampleInterval).ToArray();
             }
 
             for (int i = 0; i < xValues.Length; i++)
