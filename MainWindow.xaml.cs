@@ -209,7 +209,7 @@ public partial class MainWindow : Window
             // 如果启用了捕捉横坐标，找到最近的有原始数据的X位置
             if (_vm != null && _vm.Settings.SnapToDataRow && plottedCurves.Count > 0)
             {
-                double? snapX = FindNearestDataRowX(plottedCurves, mouseX);
+                double? snapX = FindNearestDataRowX(panel, plottedCurves, mouseX);
                 if (snapX.HasValue)
                 {
                     mouseX = snapX.Value;
@@ -817,7 +817,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 找到最近的有原始数据的X位置（至少有一个曲线在该位置有非NaN值）
     /// </summary>
-    private static double? FindNearestDataRowX(List<CurveItem> curves, double targetX)
+    private static double? FindNearestDataRowX(ChartPanel panel, List<CurveItem> curves, double targetX)
     {
         // 收集所有曲线的X值（唯一值）
         var allXValues = new HashSet<double>();
@@ -826,15 +826,19 @@ public partial class MainWindow : Window
             if (!curve.Column.Data.Parameters.TryGetValue(curve.Column.Name, out var yValues))
                 continue;
 
-            // 获取X值
+            // 根据当前面板的X轴模式获取X值
             double[] xValues;
-            if (curve.Column.Data.Parameters.TryGetValue(curve.Column.Data.Parameters.Keys.FirstOrDefault() ?? "", out var rawXValues)
+            if (panel.XAxisMode == XAxisMode.ColumnBased
+                && !string.IsNullOrEmpty(panel.XAxisColumnName)
+                && curve.Column.Data.Parameters.TryGetValue(panel.XAxisColumnName, out var rawXValues)
                 && rawXValues.Length == yValues.Length)
             {
+                // 使用指定的X轴列
                 xValues = rawXValues;
             }
             else
             {
+                // 索引模式：使用索引值
                 xValues = Enumerable.Range(0, yValues.Length).Select(i => (double)i).ToArray();
             }
 
