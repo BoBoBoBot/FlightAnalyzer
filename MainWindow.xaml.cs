@@ -428,6 +428,42 @@ public partial class MainWindow : Window
             wpfPlot.Refresh();
         };
 
+        // 手动处理右键：区分「右键拖拽=框选缩放」和「右键点击=弹出菜单」
+        // ScottPlot 内部会自行处理右键拖拽框选缩放，我们只需在右键释放且未拖拽时弹出自定义菜单
+        bool rightDragDetected = false;
+        System.Windows.Point rightMouseDownPos = default;
+
+        wpfPlot.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            rightDragDetected = false;
+            rightMouseDownPos = e.GetPosition(wpfPlot);
+        };
+
+        wpfPlot.PreviewMouseRightButtonUp += (sender, e) =>
+        {
+            if (rightDragDetected) return; // 拖拽过，ScottPlot 已处理框选缩放
+
+            // 未拖拽：弹出自定义右键菜单
+            var cm = BuildChartContextMenu(panel);
+            wpfPlot.ContextMenu = cm;
+            cm.IsOpen = true;
+        };
+
+        wpfPlot.PreviewMouseMove += (_, e) =>
+        {
+            if (e.RightButton == MouseButtonState.Pressed)
+            {
+                var pos = e.GetPosition(wpfPlot);
+                double dx = Math.Abs(pos.X - rightMouseDownPos.X);
+                double dy = Math.Abs(pos.Y - rightMouseDownPos.Y);
+                if (dx > SystemParameters.MinimumHorizontalDragDistance ||
+                    dy > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    rightDragDetected = true;
+                }
+            }
+        };
+
         // 所有面板加载完后链接一次
         Dispatcher.BeginInvoke(() => LinkAllAxes(), System.Windows.Threading.DispatcherPriority.Loaded);
     }
@@ -627,6 +663,56 @@ public partial class MainWindow : Window
 
     #region 曲线删除
 
+    /// <summary>
+    /// 右键点击图例区域时弹出 X 轴模式菜单
+    /// </summary>
+    private void LegendArea_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe) return;
+        var panel = fe.DataContext as ChartPanel;
+        if (panel == null) return;
+
+        var cm = BuildChartContextMenu(panel);
+        cm.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        cm.IsOpen = true;
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// 构建图表右键菜单：按索引排列
+    /// </summary>
+    private ContextMenu BuildChartContextMenu(ChartPanel panel)
+    {
+        var cm = new ContextMenu();
+
+        // 按索引排列
+        var miIndex = new MenuItem { Header = "按索引排列", FontSize = 13 };
+        miIndex.Click += (_, _) => XAxisMode_IndexBased_Click_ForPanel(panel);
+        cm.Items.Add(miIndex);
+
+        return cm;
+    }
+
+    /// <summary>
+    /// 右键点击曲线标签：直接用该列作为X轴排列，不弹菜单
+    /// </summary>
+    private void CurveLabel_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement fe) return;
+        if (fe.DataContext is not CurveItem curve) return;
+
+        var panel = FindParentDataContext<ChartPanel>(fe);
+        if (panel == null) return;
+
+        panel.XAxisMode = XAxisMode.ColumnBased;
+        panel.XAxisColumnName = curve.Column.Name;
+
+        if (_vm != null)
+            _vm.StatusText = $"{panel.Title}: X轴已切换为按照 [{curve.Column.Name}] 排列";
+
+        e.Handled = true;
+    }
+
     private void CurveRemove_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not TextBlock tb) return;
@@ -649,6 +735,17 @@ public partial class MainWindow : Window
     private ChartPanel? GetChartPanelFromMenuItem(MenuItem menuItem)
     {
         return menuItem.DataContext as ChartPanel;
+    }
+
+    /// <summary>
+    /// 直接对指定面板切换为索引模式（供右键菜单调用）
+    /// </summary>
+    private void XAxisMode_IndexBased_Click_ForPanel(ChartPanel panel)
+    {
+        panel.XAxisMode = XAxisMode.IndexBased;
+        panel.XAxisColumnName = null;
+        if (_vm != null)
+            _vm.StatusText = $"{panel.Title}: X轴已切换为按照索引排列";
     }
 
     /// <summary>

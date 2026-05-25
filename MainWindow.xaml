@@ -213,16 +213,6 @@
                                     DragOver="ChartArea_DragOver"
                                     DragLeave="ChartArea_DragLeave"
                                     Drop="ChartArea_Drop">
-                                <Border.ContextMenu>
-                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                        <MenuItem Header="按索引排列"
-                                                  Click="XAxisMode_IndexBased_Click"
-                                                  FontSize="13"/>
-                                        <MenuItem Header="按该列排列"
-                                                  Click="XAxisMode_ColumnBased_Click"
-                                                  FontSize="13"/>
-                                    </ContextMenu>
-                                </Border.ContextMenu>
                                 <Grid>
                                     <!-- 图表 -->
                                     <scottplot:WpfPlot Grid.Row="0"
@@ -231,11 +221,12 @@
 
 
                                     <!-- 底部信息 -->
-                                    <Border Grid.Row="0" Margin="65,15,2,2"  
-                                            MaxHeight="180" 
+                                    <Border Grid.Row="0" Margin="65,15,2,2"
+                                            MaxHeight="180"
                                             Background="Transparent"
-                                            VerticalAlignment="Top"  
-                                            HorizontalAlignment="Left">
+                                            VerticalAlignment="Top"
+                                            HorizontalAlignment="Left"
+                                            MouseRightButtonDown="LegendArea_MouseRightButtonDown">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                             <ItemsControl ItemsSource="{Binding Curves}">
                                                 <ItemsControl.ItemsPanel>
@@ -247,7 +238,8 @@
                                                     <DataTemplate DataType="{x:Type vm:CurveItem}">
                                                         <Border CornerRadius="4" Padding="5,3,5,3" Margin="2"
                                                                 BorderThickness="1.5"
-                                                                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                                                                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                                                MouseRightButtonDown="CurveLabel_MouseRightButtonDown">
                                                             <Border.Style>
                                                                 <Style TargetType="Border">
                                                                     <Setter Property="Background"
