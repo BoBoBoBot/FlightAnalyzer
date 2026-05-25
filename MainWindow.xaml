@@ -9,11 +9,6 @@
     <Window.DataContext>
         <vm:MainViewModel />
     </Window.DataContext>
-    <Window.ContextMenu>
-        <ContextMenu>
-            <MenuItem Header="全部按索引排列" Click="AllWindows_IndexBased_Click" FontSize="13"/>
-        </ContextMenu>
-    </Window.ContextMenu>
 
     <Grid Margin="8">
         <Grid.RowDefinitions>
@@ -226,7 +221,7 @@
                                             Background="Transparent"
                                             VerticalAlignment="Top"
                                             HorizontalAlignment="Left"
-                                            MouseRightButtonDown="LegendArea_MouseRightButtonDown">
+                                            PreviewMouseRightButtonDown="LegendArea_PreviewMouseRightButtonDown">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                             <ItemsControl ItemsSource="{Binding Curves}">
                                                 <ItemsControl.ItemsPanel>
@@ -238,8 +233,7 @@
                                                     <DataTemplate DataType="{x:Type vm:CurveItem}">
                                                         <Border CornerRadius="4" Padding="5,3,5,3" Margin="2"
                                                                 BorderThickness="1.5"
-                                                                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
-                                                                MouseRightButtonDown="CurveLabel_MouseRightButtonDown">
+                                                                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
                                                             <Border.Style>
                                                                 <Style TargetType="Border">
                                                                     <Setter Property="Background"

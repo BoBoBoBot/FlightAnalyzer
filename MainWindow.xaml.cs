@@ -664,14 +664,32 @@ public partial class MainWindow : Window
     #region 曲线删除
 
     /// <summary>
-    /// 右键点击图例区域时弹出 X 轴模式菜单
+    /// 图例区域右键隧道事件：标签上右键直接按该列排列，空白处弹菜单
     /// </summary>
-    private void LegendArea_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    private void LegendArea_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe) return;
         var panel = fe.DataContext as ChartPanel;
         if (panel == null) return;
 
+        // 从点击位置向上遍历，检查是否点击在 CurveItem 标签上
+        var hit = e.OriginalSource as DependencyObject;
+        while (hit != null)
+        {
+            if (hit is FrameworkElement elem && elem.DataContext is CurveItem curve)
+            {
+                // 右键标签：直接按该列排列，不弹菜单
+                panel.XAxisMode = XAxisMode.ColumnBased;
+                panel.XAxisColumnName = curve.Column.Name;
+                if (_vm != null)
+                    _vm.StatusText = $"{panel.Title}: X轴已切换为按照 [{curve.Column.Name}] 排列";
+                e.Handled = true;
+                return;
+            }
+            hit = VisualTreeHelper.GetParent(hit);
+        }
+
+        // 右键空白处：弹出菜单
         var cm = BuildChartContextMenu(panel);
         cm.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
         cm.IsOpen = true;
@@ -691,26 +709,6 @@ public partial class MainWindow : Window
         cm.Items.Add(miIndex);
 
         return cm;
-    }
-
-    /// <summary>
-    /// 右键点击曲线标签：直接用该列作为X轴排列，不弹菜单
-    /// </summary>
-    private void CurveLabel_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not FrameworkElement fe) return;
-        if (fe.DataContext is not CurveItem curve) return;
-
-        var panel = FindParentDataContext<ChartPanel>(fe);
-        if (panel == null) return;
-
-        panel.XAxisMode = XAxisMode.ColumnBased;
-        panel.XAxisColumnName = curve.Column.Name;
-
-        if (_vm != null)
-            _vm.StatusText = $"{panel.Title}: X轴已切换为按照 [{curve.Column.Name}] 排列";
-
-        e.Handled = true;
     }
 
     private void CurveRemove_Click(object sender, MouseButtonEventArgs e)
