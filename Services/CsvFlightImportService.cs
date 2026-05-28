@@ -58,10 +58,17 @@ public class CsvFlightImportService : IFlightImportService
         // 去重：重复列名加 _1, _2, ... 后缀
         var headers = DeduplicateHeaders(rawHeaders);
 
+        // 记录列顺序
+        flight.ColumnOrder = new List<string>(headers);
+
         bytesRead += encoding.GetByteCount(headerLine) + 2;
 
-        // 初始化列数据容器（用 List 分阶段收集）
+        // 初始化列数据容器
         var columnData = headers.ToDictionary(h => h, _ => new List<double>(65536));
+        // 跟踪每列是否全部为RC公式
+        var columnIsRcFormula = headers.ToDictionary(h => h, _ => true);
+        // 跟踪每列的RC公式（取第一个非空值作为代表）
+        var columnRcFormula = headers.ToDictionary(h => h, _ => string.Empty);
         int rowCount = 0;
 
         // 流式逐行读取
@@ -74,18 +81,34 @@ public class CsvFlightImportService : IFlightImportService
             for (int i = 0; i < headers.Count && i < values.Length; i++)
             {
                 string trimmed = values[i].Trim();
-                if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                string colName = headers[i];
+
+                // 检查是否为RC公式格式
+                if (columnIsRcFormula[colName] && trimmed.StartsWith("$[") && trimmed.EndsWith(']'))
                 {
-                    columnData[headers[i]].Add(val);
+                    // RC公式列：不存数值，记录公式
+                    if (string.IsNullOrEmpty(columnRcFormula[colName]))
+                        columnRcFormula[colName] = trimmed;
+                    columnData[colName].Add(double.NaN); // 占位
                 }
                 else
                 {
-                    // 尝试解析时间格式 (MM:SS.s 或 MM:SS.ss)
-                    double? timeVal = ParseTimeString(trimmed);
-                    if (timeVal.HasValue)
-                        columnData[headers[i]].Add(timeVal.Value);
+                    // 此列不是纯RC公式列
+                    columnIsRcFormula[colName] = false;
+
+                    if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                    {
+                        columnData[colName].Add(val);
+                    }
                     else
-                        columnData[headers[i]].Add(double.NaN);
+                    {
+                        // 尝试解析时间格式 (MM:SS.s 或 MM:SS.ss)
+                        double? timeVal = ParseTimeString(trimmed);
+                        if (timeVal.HasValue)
+                            columnData[colName].Add(timeVal.Value);
+                        else
+                            columnData[colName].Add(double.NaN);
+                    }
                 }
             }
 
@@ -113,10 +136,31 @@ public class CsvFlightImportService : IFlightImportService
             flight.Time = Enumerable.Range(0, rowCount).Select(i => (double)i).ToArray();
         }
 
-        // 所有列作为参数
-        foreach (var kvp in columnData)
+        // 将 List<double> 转为 double[] 并存入 Parameters
+        foreach (var colName in headers)
         {
-            flight.Parameters[kvp.Key] = kvp.Value.ToArray();
+            if (columnIsRcFormula[colName] && !string.IsNullOrEmpty(columnRcFormula[colName]))
+            {
+                // 计算列：存储RC公式，先占位
+                flight.Parameters[colName] = columnData[colName].ToArray();
+                flight.ComputedColumnRcFormulas[colName] = columnRcFormula[colName];
+            }
+            else
+            {
+                flight.Parameters[colName] = columnData[colName].ToArray();
+            }
+        }
+
+        // 计算列实时求值（此时 Parameters 已全部就绪，带插值支持）
+        var interpCtx = FormulaParser.BuildInterpolationContext(flight.Parameters);
+        foreach (var colName in headers)
+        {
+            if (columnIsRcFormula[colName] && !string.IsNullOrEmpty(columnRcFormula[colName]))
+            {
+                int colIndex = headers.IndexOf(colName);
+                string rcFormula = columnRcFormula[colName];
+                flight.Parameters[colName] = FormulaParser.EvaluateColumn(rcFormula, colIndex, flight.Parameters, headers, interpCtx);
+            }
         }
 
         return flight;
@@ -187,6 +231,9 @@ public class CsvFlightImportService : IFlightImportService
         return candidates.OrderByDescending(c => headerLine.Count(ch => ch == c)).First();
     }
 
+    /// <summary>检测文件编码（供外部调用）</summary>
+    public static Encoding DetectEncodingStatic(string filePath) => DetectEncoding(filePath);
+
     private static Encoding DetectEncoding(string filePath)
     {
         var bom = new byte[4];
@@ -195,9 +242,9 @@ public class CsvFlightImportService : IFlightImportService
             _ = fs.Read(bom, 0, 4);
         }
 
-        // UTF-8 BOM
+        // UTF-8 BOM（保留BOM以便写回时不变）
         if (bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
-            return new UTF8Encoding(false);
+            return new UTF8Encoding(true);
 
         // UTF-16 LE BOM
         if (bom[0] == 0xFF && bom[1] == 0xFE)

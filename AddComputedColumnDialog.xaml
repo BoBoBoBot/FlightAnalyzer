@@ -1,0 +1,49 @@
+<Window x:Class="FlightAnalyzer.AddComputedColumnDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="添加计算列" Height="280" Width="460"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 列名 -->
+        <TextBlock Grid.Row="0" Text="列名:" Margin="0,0,0,4" FontSize="13"/>
+        <TextBox Grid.Row="1" x:Name="ColumnNameBox" Height="30" Padding="6,4"
+                 VerticalContentAlignment="Center" FontSize="13"
+                 TextChanged="ColumnNameBox_TextChanged"/>
+
+        <!-- 公式 -->
+        <TextBlock Grid.Row="2" Text="公式:" Margin="0,10,0,4" FontSize="13"/>
+        <Grid Grid.Row="3">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBox Grid.Row="0" x:Name="FormulaBox" Height="30" Padding="6,4"
+                     VerticalContentAlignment="Center" FontSize="13"
+                     TextChanged="FormulaBox_TextChanged"/>
+            <TextBlock Grid.Row="1" FontSize="11" Foreground="Gray" Margin="2,3,0,0"
+                       Text="格式: ${列名}，支持 + - * / ()  例: ${电流}-${电流表}+10"/>
+        </Grid>
+
+        <!-- 错误提示 -->
+        <TextBlock Grid.Row="4" x:Name="ErrorText" Foreground="#E74856" FontSize="12"
+                   Margin="0,8,0,0" TextWrapping="Wrap"/>
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="取消" Width="75" Height="32" Margin="0,0,10,0"
+                    Click="Cancel_Click" IsCancel="True"/>
+            <Button Content="确定" Width="75" Height="32"
+                    x:Name="OkButton" Click="Ok_Click" IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

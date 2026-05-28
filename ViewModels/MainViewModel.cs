@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FlightAnalyzer.Models;
@@ -30,6 +31,9 @@ public partial class ColumnNode : ObservableObject
     public string ParentFileName { get; set; } = string.Empty;
     public FlightData Data { get; set; } = null!;
 
+    /// <summary>是否为计算列</summary>
+    public bool IsComputed { get; set; }
+
     [ObservableProperty]
     private bool _isPlotted;
 
@@ -47,6 +51,9 @@ public partial class CurveItem : ObservableObject
     public string fileName = string.Empty;
     [ObservableProperty]
     public string legendText = string.Empty; //自定义图例 文件名加曲线名
+
+    /// <summary>是否为计算列（计算列不显示强调点）</summary>
+    public bool IsComputed { get; set; }
 
     private ScottPlot.Color color;
     public ScottPlot.Color Color
@@ -151,7 +158,8 @@ public partial class ChartPanel : ObservableObject
             FileName = column.ParentFileName,
             LegendText = $"{column.ParentFileName} - {column.Name}",
             Color = Palette[Curves.Count % Palette.Length],
-            Column = column
+            Column = column,
+            IsComputed = column.IsComputed
         };
 
         Curves.Add(curve);
@@ -532,8 +540,8 @@ public partial class ChartPanel : ObservableObject
             scatter.LegendText = $"{curve.FileName} - {curve.Name}";
             scatter.Color = curve.Color;
             scatter.LineWidth = 1.2f;
-            // 根据设置决定是否显示数据点标记
-            bool showPoints = Parent?.Settings.ShowDataPoints ?? true;
+            // 根据设置决定是否显示数据点标记（计算列不显示强调点）
+            bool showPoints = !curve.IsComputed && (Parent?.Settings.ShowDataPoints ?? true);
             if (showPoints)
             {
                 scatter.MarkerSize = Parent?.Settings.DataPointSize ?? 3.2f;
@@ -825,7 +833,8 @@ public partial class MainViewModel : ObservableObject
                     {
                         Name = colName,
                         ParentFileName = flight.Name,
-                        Data = flight
+                        Data = flight,
+                        IsComputed = flight.ComputedColumnRcFormulas.ContainsKey(colName)
                     });
                 }
 
@@ -859,7 +868,8 @@ public partial class MainViewModel : ObservableObject
             {
                 Name = colName,
                 ParentFileName = flight.Name,
-                Data = flight
+                Data = flight,
+                IsComputed = flight.ComputedColumnRcFormulas.ContainsKey(colName)
             });
         }
 
@@ -888,7 +898,8 @@ public partial class MainViewModel : ObservableObject
             {
                 Name = colName,
                 ParentFileName = flight.Name,
-                Data = flight
+                Data = flight,
+                IsComputed = flight.ComputedColumnRcFormulas.ContainsKey(colName)
             });
         }
         FileTree.Add(fileNode);
@@ -927,5 +938,104 @@ public partial class MainViewModel : ObservableObject
         foreach (var panel in ChartPanels) panel.ClearCurves();
         PlottedColumns.Clear();
         StatusText = "已清空所有图表";
+    }
+
+    /// <summary>
+    /// 添加计算列到指定文件节点
+    /// </summary>
+    public void AddComputedColumn(FileNode fileNode, string columnName, string formula)
+    {
+        var flight = fileNode.Data;
+
+        // 构建列名→列索引映射
+        var columnIndices = new Dictionary<string, int>();
+        for (int i = 0; i < flight.ColumnOrder.Count; i++)
+            columnIndices[flight.ColumnOrder[i]] = i;
+
+        // 计算列的索引（追加到末尾）
+        int computedColIndex = flight.ColumnOrder.Count;
+
+        // 将 ${列名} 公式转换为 RC 格式
+        string rcFormula = FormulaParser.ConvertToRcFormat(formula, columnIndices, computedColIndex);
+
+        // 更新列顺序
+        flight.ColumnOrder.Add(columnName);
+
+        // 存储公式
+        flight.ComputedColumnFormulas[columnName] = formula;
+        flight.ComputedColumnRcFormulas[columnName] = rcFormula;
+
+        // 构建插值上下文（用于RC引用越界时插值）
+        var interpCtx = FormulaParser.BuildInterpolationContext(flight.Parameters);
+
+        // 实时求值（带插值支持）
+        double[] evaluated = FormulaParser.EvaluateColumn(rcFormula, computedColIndex, flight.Parameters, flight.ColumnOrder, interpCtx);
+        flight.Parameters[columnName] = evaluated;
+
+        // 添加到前端树
+        var colNode = new ColumnNode
+        {
+            Name = columnName,
+            ParentFileName = fileNode.FileName,
+            Data = flight,
+            IsComputed = true
+        };
+        fileNode.Columns.Add(colNode);
+
+        // 追加到CSV文件
+        AppendComputedColumnToCsv(flight.FilePath, columnName, rcFormula);
+
+        StatusText = $"已添加计算列: {columnName}，公式: {formula}";
+    }
+
+    /// <summary>
+    /// 将计算列追加到CSV文件
+    /// </summary>
+    private static void AppendComputedColumnToCsv(string filePath, string columnName, string rcFormula)
+    {
+        if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
+            return;
+
+        var encoding = Services.CsvFlightImportService.DetectEncodingStatic(filePath);
+
+        // 用 StreamReader 读取（保留原始编码理解）
+        string[] lines;
+        using (var sr = new System.IO.StreamReader(filePath, encoding))
+        {
+            var content = sr.ReadToEnd();
+            lines = content.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+        }
+
+        if (lines.Length == 0) return;
+
+        // 检测分隔符
+        char delimiter = DetectDelimiterStatic(lines[0]);
+        string delim = delimiter.ToString();
+
+        // 表头追加列名
+        lines[0] = lines[0] + delim + columnName;
+
+        // 数据行追加RC公式
+        for (int i = 1; i < lines.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(lines[i]))
+                lines[i] = lines[i] + delim + rcFormula;
+        }
+
+        // 用 StreamWriter 写回（保持同一编码）
+        using (var sw = new System.IO.StreamWriter(filePath, false, encoding))
+        {
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) sw.Write("\n");
+                sw.Write(lines[i]);
+            }
+        }
+    }
+
+    private static char DetectDelimiterStatic(string headerLine)
+    {
+        var candidates = new[] { ',', ';', '\t', '|' };
+        return candidates.OrderByDescending(c => headerLine.Count(ch => ch == c)).First();
     }
 }

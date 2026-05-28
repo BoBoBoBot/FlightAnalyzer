@@ -837,6 +837,35 @@ public partial class MainWindow : Window
         _vm.RemoveFile(fileNode);
     }
 
+    private void AddComputedColumn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        if (sender is not MenuItem menuItem) return;
+        if (menuItem.Parent is not ContextMenu contextMenu) return;
+        if (contextMenu.PlacementTarget is not StackPanel stackPanel) return;
+        if (stackPanel.DataContext is not FileNode fileNode) return;
+
+        // 收集已有列名
+        var existingNames = fileNode.Columns.Select(c => c.Name).ToList();
+
+        var dialog = new AddComputedColumnDialog(existingNames)
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                _vm.AddComputedColumn(fileNode, dialog.NewColumnName, dialog.Formula);
+            }
+            catch (Exception ex)
+            {
+                _vm.StatusText = $"添加计算列失败: {ex.Message}";
+            }
+        }
+    }
+
     #endregion
 
     #region 辅助

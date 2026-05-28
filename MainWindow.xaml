@@ -138,6 +138,12 @@
                                                VerticalAlignment="Center"/>
                                     <StackPanel.ContextMenu>
                                         <ContextMenu>
+                                            <MenuItem Header="添加计算列" Click="AddComputedColumn_Click">
+                                                <MenuItem.Icon>
+                                                    <TextBlock FontFamily="{StaticResource SymbolThemeFontFamily}" Text="&#xE948;"/>
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator/>
                                             <MenuItem Header="删除此文件" Click="DeleteFileNode_Click">
                                                 <MenuItem.Icon>
                                                     <TextBlock FontFamily="{StaticResource SymbolThemeFontFamily}" Text="&#xE74D;"/>
