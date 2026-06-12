@@ -1040,12 +1040,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>快捷创建带图标的MenuItem</summary>
-    private static void AddMenuItem(ContextMenu cm, string header, string glyph, Action onClick)
+    private void AddMenuItem(ContextMenu cm, string header, string glyph, Action onClick)
     {
         var mi = new MenuItem
         {
             Header = header,
-            Icon = new TextBlock { Text = glyph }
+            Icon = new TextBlock
+            {
+                FontFamily = (System.Windows.Media.FontFamily)FindResource("SymbolThemeFontFamily"),
+                Text = glyph
+            }
         };
         mi.Click += (s, args) => onClick();
         cm.Items.Add(mi);
