@@ -1064,6 +1064,103 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 删除计算列（从数据模型 + CSV文件 + UI 中移除）
+    /// </summary>
+    public void RemoveComputedColumn(FileNode fileNode, ColumnNode colNode)
+    {
+        var flight = fileNode.Data;
+        string colName = colNode.Name;
+
+        // 1. 从 FlightData 中移除
+        flight.Parameters.Remove(colName);
+        flight.ComputedColumnFormulas.Remove(colName);
+        flight.ComputedColumnRcFormulas.Remove(colName);
+        flight.ColumnOrder.Remove(colName);
+
+        // 2. 从 FileNode.Columns 中移除
+        fileNode.Columns.Remove(colNode);
+
+        // 3. 从 CSV 文件中移除该列
+        RemoveColumnFromCsv(flight.FilePath, colName);
+
+        // 4. 从图表面板移除对应曲线并刷新
+        foreach (var panel in ChartPanels)
+        {
+            var curve = panel.Curves.FirstOrDefault(c =>
+                c.FileName == fileNode.FileName && c.Name == colName);
+            if (curve != null)
+            {
+                panel.Curves.Remove(curve);
+                panel.Refresh();
+            }
+        }
+
+        UpdatePlottedColumns();
+        StatusText = $"已删除计算列: {colName}";
+    }
+
+    /// <summary>
+    /// 从CSV文件中移除指定列（表头+数据行）
+    /// </summary>
+    private static void RemoveColumnFromCsv(string filePath, string colName)
+    {
+        if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
+            return;
+
+        var encoding = Services.CsvFlightImportService.DetectEncodingStatic(filePath);
+
+        string[] lines;
+        using (var sr = new System.IO.StreamReader(filePath, encoding))
+        {
+            var content = sr.ReadToEnd();
+            lines = content.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+        }
+
+        if (lines.Length == 0) return;
+
+        char delimiter = DetectDelimiterStatic(lines[0]);
+
+        // 查找列在表头中的位置（支持编码格式 ${name}[formula] 和纯列名）
+        var headers = lines[0].Split(delimiter);
+        int colIdx = -1;
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var (parsedName, _, _) = FlightData.ParseComputedHeader(headers[i].Trim());
+            if (parsedName == colName)
+            {
+                colIdx = i;
+                break;
+            }
+        }
+
+        if (colIdx < 0) return;
+
+        string delim = delimiter.ToString();
+
+        // 移除表头列
+        var newHeaders = headers.Where((_, i) => i != colIdx).ToArray();
+        lines[0] = string.Join(delim, newHeaders);
+
+        // 移除每行数据
+        for (int i = 1; i < lines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[i])) continue;
+            var fields = lines[i].Split(delimiter);
+            var newFields = fields.Where((_, j) => j != colIdx).ToArray();
+            lines[i] = string.Join(delim, newFields);
+        }
+
+        using (var sw = new System.IO.StreamWriter(filePath, false, encoding))
+        {
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) sw.Write("\n");
+                sw.Write(lines[i]);
+            }
+        }
+    }
+
+    /// <summary>
     /// 更新CSV文件中计算列的公式（新格式：表头=${列名}[RC公式]，数据=计算值）
     /// </summary>
     private static void UpdateComputedColumnInCsv(string filePath, string oldName, string newName, string rcFormula, double[] values)

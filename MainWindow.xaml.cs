@@ -847,27 +847,42 @@ public partial class MainWindow : Window
 
     private void DeleteFileNode_Click(object sender, RoutedEventArgs e)
     {
-        if (_vm == null) return;
-        if (sender is not MenuItem menuItem) return;
-        if (menuItem.Parent is not ContextMenu contextMenu) return;
-        if (contextMenu.PlacementTarget is not StackPanel stackPanel) return;
-        if (stackPanel.DataContext is not FileNode fileNode) return;
+        // 保留旧签名兼容，旧 XAML ContextMenu 已移除，此方法不再被调用
+    }
 
-        _vm.RemoveFile(fileNode);
+    /// <summary>
+    /// 删除文件节点（带确认对话框）
+    /// </summary>
+    private void DeleteFileNode(FileNode fileNode)
+    {
+        if (_vm == null) return;
+
+        var result = MessageBox.Show(
+            $"确定要删除文件 \"{fileNode.FileName}\" 吗？此操作将同时移除所有关联数据。",
+            "删除文件",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result == MessageBoxResult.Yes)
+            _vm.RemoveFile(fileNode);
     }
 
     private void AddComputedColumn_Click(object sender, RoutedEventArgs e)
     {
+        // 保留旧签名兼容，旧 XAML ContextMenu 已移除，此方法不再被调用
+    }
+
+    /// <summary>
+    /// 弹出添加计算列对话框
+    /// </summary>
+    private void ShowAddComputedColumnDialog(FileNode fileNode)
+    {
         if (_vm == null) return;
-        if (sender is not MenuItem menuItem) return;
-        if (menuItem.Parent is not ContextMenu contextMenu) return;
-        if (contextMenu.PlacementTarget is not StackPanel stackPanel) return;
-        if (stackPanel.DataContext is not FileNode fileNode) return;
 
-        // 收集已有列名
         var existingNames = fileNode.Columns.Select(c => c.Name).ToList();
+        var allColumnNames = fileNode.Columns.Select(c => c.Name).ToList();
 
-        var dialog = new AddComputedColumnDialog(existingNames, existingNames)
+        var dialog = new AddComputedColumnDialog(existingNames, allColumnNames)
         {
             Owner = this
         };
@@ -944,33 +959,96 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// TreeView右键弹出处理——仅计算列显示"编辑公式"菜单
+    /// 右键计算列 → 删除该列
+    /// </summary>
+    private void DeleteComputedColumn(ColumnNode colNode)
+    {
+        if (_vm == null) return;
+
+        var fileNode = _vm.FileTree.FirstOrDefault(f => f.FileName == colNode.ParentFileName);
+        if (fileNode == null) return;
+
+        var result = MessageBox.Show(
+            $"确定要删除计算列 \"{colNode.Name}\" 吗？此操作不可撤销。",
+            "删除计算列",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                _vm.RemoveComputedColumn(fileNode, colNode);
+            }
+            catch (Exception ex)
+            {
+                _vm.StatusText = $"删除计算列失败: {ex.Message}";
+            }
+        }
+    }
+
+    /// <summary>
+    /// TreeView右键弹出处理
+    /// - FileNode: "添加公式列" / "删除此文件"
+    /// - ColumnNode (IsComputed): "编辑公式" / "删除列" / "添加公式列"
+    /// - ColumnNode (普通): "添加公式列"
     /// </summary>
     private void DataTreeView_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         var treeViewItem = FindVisualParent<TreeViewItem>(e.OriginalSource as DependencyObject);
         if (treeViewItem == null) return;
 
-        if (treeViewItem.DataContext is ColumnNode colNode && colNode.IsComputed)
+        if (treeViewItem.DataContext is FileNode fileNode)
         {
             treeViewItem.IsSelected = true;
             e.Handled = true;
 
             var cm = new ContextMenu();
-            var mi = new MenuItem
-            {
-                Header = "编辑公式",
-                Icon = new TextBlock
-                {
-                    FontFamily = (System.Windows.Media.FontFamily)FindResource("SymbolThemeFontFamily"),
-                    Text = "\uE948"
-                }
-            };
-            mi.Click += (s, args) => EditComputedColumn(colNode);
-            cm.Items.Add(mi);
+            AddMenuItem(cm, "添加公式列", "\uE948", () => ShowAddComputedColumnDialog(fileNode));
+            cm.Items.Add(new Separator());
+            AddMenuItem(cm, "删除此文件", "\uE74D", () => DeleteFileNode(fileNode));
             cm.IsOpen = true;
         }
-        // 非计算列的 ColumnNode：不弹出菜单，不处理事件
+        else if (treeViewItem.DataContext is ColumnNode colNode && colNode.IsComputed)
+        {
+            treeViewItem.IsSelected = true;
+            e.Handled = true;
+
+            var parentFileNode = _vm?.FileTree.FirstOrDefault(f => f.FileName == colNode.ParentFileName);
+
+            var cm = new ContextMenu();
+            AddMenuItem(cm, "编辑公式", "\uE948", () => EditComputedColumn(colNode));
+            cm.Items.Add(new Separator());
+            AddMenuItem(cm, "删除列", "\uE74D", () => DeleteComputedColumn(colNode));
+            cm.Items.Add(new Separator());
+            if (parentFileNode != null)
+                AddMenuItem(cm, "添加公式列", "\uE710", () => ShowAddComputedColumnDialog(parentFileNode));
+            cm.IsOpen = true;
+        }
+        else if (treeViewItem.DataContext is ColumnNode colNodeNonComputed)
+        {
+            treeViewItem.IsSelected = true;
+            e.Handled = true;
+
+            var parentFileNode = _vm?.FileTree.FirstOrDefault(f => f.FileName == colNodeNonComputed.ParentFileName);
+
+            var cm = new ContextMenu();
+            if (parentFileNode != null)
+                AddMenuItem(cm, "添加公式列", "\uE710", () => ShowAddComputedColumnDialog(parentFileNode));
+            cm.IsOpen = true;
+        }
+    }
+
+    /// <summary>快捷创建带图标的MenuItem</summary>
+    private static void AddMenuItem(ContextMenu cm, string header, string glyph, Action onClick)
+    {
+        var mi = new MenuItem
+        {
+            Header = header,
+            Icon = new TextBlock { Text = glyph }
+        };
+        mi.Click += (s, args) => onClick();
+        cm.Items.Add(mi);
     }
 
     private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
