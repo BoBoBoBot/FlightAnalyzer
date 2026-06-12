@@ -428,6 +428,24 @@ public partial class MainWindow : Window
             wpfPlot.Refresh();
         };
 
+        // ★ 修复：禁用 ScottPlot 默认的 Alt+左键 框选缩放辅助触发
+        // 切屏(Alt+Tab)后 Alt 键状态可能残留，导致左键/右键点击误触发中键(框选缩放)行为
+        foreach (var response in wpfPlot.UserInputProcessor.UserActionResponses)
+        {
+            if (response is ScottPlot.Interactivity.UserActionResponses.MouseDragZoomRectangle zoomRect)
+            {
+                // 将辅助触发键改为不可能按到的组合（Middle+Unknown），彻底禁用 Alt+Left 触发
+                zoomRect.SecondaryMouseButton = ScottPlot.Interactivity.StandardMouseButtons.Middle;
+                zoomRect.SecondaryKey = ScottPlot.Interactivity.StandardKeys.Unknown;
+            }
+        }
+
+        // ★ 修复：窗口获焦时重置 ScottPlot 键盘状态，防止 Alt 等修饰键状态残留
+        wpfPlot.GotKeyboardFocus += (_, _) =>
+        {
+            wpfPlot.UserInputProcessor.KeyState.Reset();
+        };
+
         // 手动处理右键：区分「右键拖拽=框选缩放」和「右键点击=弹出菜单」
         // ScottPlot 内部会自行处理右键拖拽框选缩放，我们只需在右键释放且未拖拽时弹出自定义菜单
         bool rightDragDetected = false;

@@ -129,7 +129,24 @@ public class CsvFlightImportService : IFlightImportService
 
         if (looksLikeTime)
         {
-            flight.Time = columnData[firstCol].ToArray();
+            var timeArr = columnData[firstCol].ToArray();
+
+            // 检测是否为 DateTime 绝对秒数（值大于 1e9 即约 31 年的秒数）
+            // DateTime 2026 年的秒数约为 6.38e16，远大于时间戳秒数
+            if (timeArr.Length > 0 && timeArr[0] > 1e9)
+            {
+                // 转换为相对秒数（以第一行为基准）
+                double baseTime = timeArr[0];
+                for (int i = 0; i < timeArr.Length; i++)
+                {
+                    if (!double.IsNaN(timeArr[i]))
+                        timeArr[i] = timeArr[i] - baseTime;
+                }
+                // 同步更新 Parameters 中该列的值
+                columnData[firstCol] = new List<double>(timeArr);
+            }
+
+            flight.Time = timeArr;
         }
         else
         {
@@ -192,13 +209,37 @@ public class CsvFlightImportService : IFlightImportService
     }
 
     /// <summary>
-    /// 解析时间格式字符串为秒数
-    /// 支持格式: HH:MM:SS.sss, MM:SS.s, MM:SS.ss, MM:SS
+    /// 解析时间格式字符串为秒数（DateTime格式时为相对第一行的偏移秒数）
+    /// 支持格式: yyyy-MM-dd HH:mm:ss.fff, HH:MM:SS.sss, MM:SS.s, MM:SS.ss, MM:SS
     /// </summary>
     private static double? ParseTimeString(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
             return null;
+
+        // 优先尝试完整日期时间格式（含空格分隔的日期部分）
+        // 匹配: 2026-06-03 09:04:34.180, 2026/06/03 09:04:34, 2026-06-03T09:04:34.180 等
+        if (input.Length > 10 && (input.Contains(' ') || input.Contains('T')))
+        {
+            // 尝试常见的日期时间格式
+            string[] formats = [
+                "yyyy-MM-dd HH:mm:ss.fff",
+                "yyyy-MM-dd HH:mm:ss.ff",
+                "yyyy-MM-dd HH:mm:ss.f",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy/MM/dd HH:mm:ss.fff",
+                "yyyy/MM/dd HH:mm:ss.ff",
+                "yyyy/MM/dd HH:mm:ss.f",
+                "yyyy/MM/dd HH:mm:ss",
+                "yyyy-MM-ddTHH:mm:ss.fff",
+                "yyyy-MM-ddTHH:mm:ss",
+            ];
+            if (DateTime.TryParseExact(input, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+            {
+                // 返回 Ticks 作为临时值，后续在 Import 中统一转换为相对秒数
+                return dt.Ticks / (double)TimeSpan.TicksPerSecond;
+            }
+        }
 
         var parts = input.Split(':');
 
