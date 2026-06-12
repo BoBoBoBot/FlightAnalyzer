@@ -79,6 +79,32 @@ public static partial class FormulaParser
 
     #endregion
 
+    #region RC→${列名} 反向转换
+
+    /// <summary>
+    /// 将RC格式公式还原为用户友好的 ${列名} 格式（用于编辑公式时展示）
+    /// </summary>
+    public static string ConvertRcToColumnFormat(string rcFormula, List<string> columnOrder, int computedColIndex)
+    {
+        return RcRefRegex.Replace(rcFormula, match =>
+        {
+            var inner = match.Value[2..^1]; // 去掉 $[ 和 ]
+            int cIdx = inner.IndexOf('C');
+            string cPart = inner[(cIdx + 1)..];
+
+            int colOffset = 0;
+            if (cPart.StartsWith("[") && cPart.EndsWith(']'))
+                colOffset = int.Parse(cPart[1..^1], CultureInfo.InvariantCulture);
+
+            int targetCol = computedColIndex + colOffset;
+            if (targetCol >= 0 && targetCol < columnOrder.Count)
+                return $"${{{columnOrder[targetCol]}}}";
+            return match.Value; // 越界则保留原样
+        });
+    }
+
+    #endregion
+
     #region RC格式求值
 
     /// <summary>

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using FlightAnalyzer.Services;
 using FlightAnalyzer.ViewModels;
 using ScottPlot;
 using ScottPlot.Plottables;
@@ -866,7 +867,7 @@ public partial class MainWindow : Window
         // 收集已有列名
         var existingNames = fileNode.Columns.Select(c => c.Name).ToList();
 
-        var dialog = new AddComputedColumnDialog(existingNames)
+        var dialog = new AddComputedColumnDialog(existingNames, existingNames)
         {
             Owner = this
         };
@@ -882,6 +883,105 @@ public partial class MainWindow : Window
                 _vm.StatusText = $"添加计算列失败: {ex.Message}";
             }
         }
+    }
+
+    /// <summary>
+    /// 右键计算列 → 重新编辑公式（仅在 IsComputed=true 时弹出）
+    /// </summary>
+    private void EditComputedColumn(ColumnNode colNode)
+    {
+        if (_vm == null) return;
+
+        // 找到父 FileNode
+        var fileNode = _vm.FileTree.FirstOrDefault(f => f.FileName == colNode.ParentFileName);
+        if (fileNode == null) return;
+
+        // 从表头/字典获取已有RC公式
+        var flight = fileNode.Data;
+
+        // 优先取 ${列名} 格式（人类可读），若无则从RC反向转换
+        string existingFormula;
+        if (flight.ComputedColumnFormulas.TryGetValue(colNode.Name, out var colFormat))
+        {
+            existingFormula = colFormat;
+        }
+        else if (flight.ComputedColumnRcFormulas.TryGetValue(colNode.Name, out var rcFormula))
+        {
+            int idx = flight.ColumnOrder.IndexOf(colNode.Name);
+            existingFormula = FormulaParser.ConvertRcToColumnFormat(rcFormula, flight.ColumnOrder, idx);
+        }
+        else
+        {
+            existingFormula = "";
+        }
+
+        // 收集已有列名（排除当前列，允许保留原名）
+        var existingNames = fileNode.Columns
+            .Where(c => c.Name != colNode.Name)
+            .Select(c => c.Name)
+            .ToList();
+
+        // 下拉框列名：所有列（包括当前列，用于完整引用显示）
+        var allColumnNames = fileNode.Columns.Select(c => c.Name).ToList();
+
+        var dialog = new AddComputedColumnDialog(existingNames, allColumnNames, colNode.Name, existingFormula)
+        {
+            Owner = this,
+            Title = "编辑计算列公式"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                _vm.UpdateComputedColumn(fileNode, colNode, dialog.NewColumnName, dialog.Formula);
+            }
+            catch (Exception ex)
+            {
+                _vm.StatusText = $"更新计算列失败: {ex.Message}";
+            }
+        }
+    }
+
+    /// <summary>
+    /// TreeView右键弹出处理——仅计算列显示"编辑公式"菜单
+    /// </summary>
+    private void DataTreeView_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var treeViewItem = FindVisualParent<TreeViewItem>(e.OriginalSource as DependencyObject);
+        if (treeViewItem == null) return;
+
+        if (treeViewItem.DataContext is ColumnNode colNode && colNode.IsComputed)
+        {
+            treeViewItem.IsSelected = true;
+            e.Handled = true;
+
+            var cm = new ContextMenu();
+            var mi = new MenuItem
+            {
+                Header = "编辑公式",
+                Icon = new TextBlock
+                {
+                    FontFamily = (System.Windows.Media.FontFamily)FindResource("SymbolThemeFontFamily"),
+                    Text = "\uE948"
+                }
+            };
+            mi.Click += (s, args) => EditComputedColumn(colNode);
+            cm.Items.Add(mi);
+            cm.IsOpen = true;
+        }
+        // 非计算列的 ColumnNode：不弹出菜单，不处理事件
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child != null)
+        {
+            if (child is T parent)
+                return parent;
+            child = System.Windows.Media.VisualTreeHelper.GetParent(child);
+        }
+        return null;
     }
 
     #endregion

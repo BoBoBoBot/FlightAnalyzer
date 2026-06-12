@@ -5,6 +5,32 @@ namespace FlightAnalyzer.Models;
 /// </summary>
 public class FlightData
 {
+    // === 计算列表头编解码 ===
+    // 格式: ${列名}[RC公式]
+    // 例如: ${功率}[$[RC[-3]]*$[RC[-4]]]
+
+    /// <summary>编码: 将列名和RC公式组合为CSV表头</summary>
+    public static string EncodeComputedHeader(string name, string rcFormula)
+        => $"${{{name}}}[{rcFormula}]";
+
+    /// <summary>解码: 从CSV表头提取列名和RC公式，若非计算列返回header原样</summary>
+    public static (string Name, string RcFormula, bool IsComputed) ParseComputedHeader(string header)
+    {
+        // 匹配 ${name}[formula] — name不含"}[", formula取剩余直到末尾]
+        if (header.StartsWith("${") && header.Length > 4)
+        {
+            int sepIdx = header.IndexOf("}[");
+            if (sepIdx > 2 && header.EndsWith(']'))
+            {
+                string name = header.Substring(2, sepIdx - 2);
+                string formula = header.Substring(sepIdx + 2, header.Length - sepIdx - 3);
+                if (!string.IsNullOrWhiteSpace(name) && formula.StartsWith("$["))
+                    return (name, formula, true);
+            }
+        }
+        return (header, string.Empty, false);
+    }
+
     /// <summary>飞行名称/文件名</summary>
     public string Name { get; set; } = string.Empty;
 

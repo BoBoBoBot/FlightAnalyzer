@@ -46,7 +46,7 @@ public class CsvFlightImportService : IFlightImportService
         // 检测分隔符
         char delimiter = DetectDelimiter(headerLine);
 
-        // 解析表头
+        // 解析表头，同时检测新格式 ${列名}[RC公式]
         var rawHeaders = headerLine.Split(delimiter)
             .Select((h, i) =>
             {
@@ -55,20 +55,48 @@ public class CsvFlightImportService : IFlightImportService
             })
             .ToList();
 
+        // 预解析计算列表头（新格式: ${name}[rcFormula]）
+        var computedFromHeader = new Dictionary<int, (string Name, string RcFormula)>();
+        for (int i = 0; i < rawHeaders.Count; i++)
+        {
+            var (name, formula, isComputed) = FlightData.ParseComputedHeader(rawHeaders[i]);
+            if (isComputed)
+            {
+                rawHeaders[i] = name;   // 表头替换为纯列名
+                computedFromHeader[i] = (name, formula);
+            }
+        }
+
         // 去重：重复列名加 _1, _2, ... 后缀
         var headers = DeduplicateHeaders(rawHeaders);
 
         // 记录列顺序
         flight.ColumnOrder = new List<string>(headers);
 
+        // 记录从表头解析出的计算列（去重后列名可能变化，需重新映射）
+        var computedColByName = new Dictionary<string, string>(); // name → rcFormula
+        for (int i = 0; i < rawHeaders.Count; i++)
+        {
+            if (computedFromHeader.TryGetValue(i, out var info))
+            {
+                // 去重后的名字
+                string finalName = DeduplicateName(rawHeaders, i);
+                computedColByName[finalName] = info.RcFormula;
+            }
+        }
+
         bytesRead += encoding.GetByteCount(headerLine) + 2;
 
         // 初始化列数据容器
-        var columnData = headers.ToDictionary(h => h, _ => new List<double>(65536));
-        // 跟踪每列是否全部为RC公式
-        var columnIsRcFormula = headers.ToDictionary(h => h, _ => true);
-        // 跟踪每列的RC公式（取第一个非空值作为代表）
-        var columnRcFormula = headers.ToDictionary(h => h, _ => string.Empty);
+        var columnData = new Dictionary<string, List<double>>();
+        var columnIsRcFormula = new Dictionary<string, bool>();
+        var columnRcFormula = new Dictionary<string, string>();
+        foreach (var h in headers)
+        {
+            columnData[h] = new List<double>(65536);
+            columnIsRcFormula[h] = !computedColByName.ContainsKey(h);
+            columnRcFormula[h] = string.Empty;
+        }
         int rowCount = 0;
 
         // 流式逐行读取
@@ -83,17 +111,23 @@ public class CsvFlightImportService : IFlightImportService
                 string trimmed = values[i].Trim();
                 string colName = headers[i];
 
-                // 检查是否为RC公式格式
-                if (columnIsRcFormula[colName] && trimmed.StartsWith("$[") && trimmed.EndsWith(']'))
+                // 表头已识别为计算列 → 直接按数值解析
+                if (computedColByName.ContainsKey(colName))
                 {
-                    // RC公式列：不存数值，记录公式
+                    if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                        columnData[colName].Add(val);
+                    else
+                        columnData[colName].Add(double.NaN);
+                }
+                // 旧格式兼容：检测RC公式占位列
+                else if (columnIsRcFormula[colName] && trimmed.StartsWith("$[") && trimmed.EndsWith(']'))
+                {
                     if (string.IsNullOrEmpty(columnRcFormula[colName]))
                         columnRcFormula[colName] = trimmed;
                     columnData[colName].Add(double.NaN); // 占位
                 }
                 else
                 {
-                    // 此列不是纯RC公式列
                     columnIsRcFormula[colName] = false;
 
                     if (double.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
@@ -102,7 +136,6 @@ public class CsvFlightImportService : IFlightImportService
                     }
                     else
                     {
-                        // 尝试解析时间格式 (MM:SS.s 或 MM:SS.ss)
                         double? timeVal = ParseTimeString(trimmed);
                         if (timeVal.HasValue)
                             columnData[colName].Add(timeVal.Value);
@@ -115,7 +148,6 @@ public class CsvFlightImportService : IFlightImportService
             bytesRead += encoding.GetByteCount(line) + 2;
             rowCount++;
 
-            // 每1万行报告一次进度
             if (rowCount % 10000 == 0)
                 progress?.Report((double)bytesRead / totalBytes);
         }
@@ -156,9 +188,15 @@ public class CsvFlightImportService : IFlightImportService
         // 将 List<double> 转为 double[] 并存入 Parameters
         foreach (var colName in headers)
         {
-            if (columnIsRcFormula[colName] && !string.IsNullOrEmpty(columnRcFormula[colName]))
+            if (computedColByName.TryGetValue(colName, out var rcFormula))
             {
-                // 计算列：存储RC公式，先占位
+                // 新格式：表头已含公式，数据行为数值
+                flight.Parameters[colName] = columnData[colName].ToArray();
+                flight.ComputedColumnRcFormulas[colName] = rcFormula;
+            }
+            else if (columnIsRcFormula[colName] && !string.IsNullOrEmpty(columnRcFormula[colName]))
+            {
+                // 旧格式兼容：RC公式在数据行中
                 flight.Parameters[colName] = columnData[colName].ToArray();
                 flight.ComputedColumnRcFormulas[colName] = columnRcFormula[colName];
             }
@@ -170,13 +208,24 @@ public class CsvFlightImportService : IFlightImportService
 
         // 计算列实时求值（此时 Parameters 已全部就绪，带插值支持）
         var interpCtx = FormulaParser.BuildInterpolationContext(flight.Parameters);
+        // 合并新格式和旧格式的计算列
+        var allComputedColumns = new HashSet<string>(computedColByName.Keys);
         foreach (var colName in headers)
-        {
             if (columnIsRcFormula[colName] && !string.IsNullOrEmpty(columnRcFormula[colName]))
+                allComputedColumns.Add(colName);
+
+        foreach (var colName in allComputedColumns)
+        {
+            int colIndex = headers.IndexOf(colName);
+            string rcFormula = computedColByName.TryGetValue(colName, out var f)
+                ? f : columnRcFormula[colName];
+            flight.Parameters[colName] = FormulaParser.EvaluateColumn(rcFormula, colIndex, flight.Parameters, headers, interpCtx);
+
+            // 反向转换为 ${列名} 格式存入 ComputedColumnFormulas（用于编辑公式展示）
+            if (!flight.ComputedColumnFormulas.ContainsKey(colName))
             {
-                int colIndex = headers.IndexOf(colName);
-                string rcFormula = columnRcFormula[colName];
-                flight.Parameters[colName] = FormulaParser.EvaluateColumn(rcFormula, colIndex, flight.Parameters, headers, interpCtx);
+                flight.ComputedColumnFormulas[colName] = FormulaParser.ConvertRcToColumnFormat(
+                    rcFormula, headers, colIndex);
             }
         }
 
@@ -206,6 +255,16 @@ public class CsvFlightImportService : IFlightImportService
         }
 
         return result;
+    }
+
+    /// <summary>获取单个列名去重后的结果（与 DeduplicateHeaders 一致）</summary>
+    private static string DeduplicateName(List<string> rawHeaders, int index)
+    {
+        string name = rawHeaders[index];
+        int count = 0;
+        for (int i = 0; i < index; i++)
+            if (rawHeaders[i] == name) count++;
+        return count == 0 ? name : $"{name}_{count}";
     }
 
     /// <summary>

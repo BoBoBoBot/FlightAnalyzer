@@ -41,6 +41,9 @@ public partial class ColumnNode : ObservableObject
     private bool _isVisible = true;
 
     public void NotifyPlottedChanged() => OnPropertyChanged(nameof(IsPlotted));
+
+    /// <summary>通知名称变更（供外部修改Name后刷新UI）</summary>
+    public void NotifyNameChanged() => OnPropertyChanged(nameof(Name));
 }
 
 public partial class CurveItem : ObservableObject
@@ -982,23 +985,94 @@ public partial class MainViewModel : ObservableObject
         };
         fileNode.Columns.Add(colNode);
 
-        // 追加到CSV文件
-        AppendComputedColumnToCsv(flight.FilePath, columnName, rcFormula);
+        // 追加到CSV文件（新格式：表头=${列名}[RC公式]，数据=计算值）
+        AppendComputedColumnToCsv(flight.FilePath, columnName, rcFormula, evaluated);
 
         StatusText = $"已添加计算列: {columnName}，公式: {formula}";
     }
 
     /// <summary>
-    /// 将计算列追加到CSV文件
+    /// 更新已有计算列的公式（支持重命名）
     /// </summary>
-    private static void AppendComputedColumnToCsv(string filePath, string columnName, string rcFormula)
+    public void UpdateComputedColumn(FileNode fileNode, ColumnNode colNode, string newColumnName, string newFormula)
+    {
+        var flight = fileNode.Data;
+        string oldName = colNode.Name;
+
+        // 构建列索引映射
+        var columnIndices = new Dictionary<string, int>();
+        for (int i = 0; i < flight.ColumnOrder.Count; i++)
+            columnIndices[flight.ColumnOrder[i]] = i;
+
+        int computedColIndex = flight.ColumnOrder.IndexOf(oldName);
+        if (computedColIndex < 0) computedColIndex = flight.ColumnOrder.Count;
+
+        // 转换公式为RC格式
+        string rcFormula = FormulaParser.ConvertToRcFormat(newFormula, columnIndices, computedColIndex);
+
+        // 更新列名（如果发生变更）
+        if (oldName != newColumnName)
+        {
+            // 移除旧键
+            flight.ComputedColumnFormulas.Remove(oldName);
+            flight.ComputedColumnRcFormulas.Remove(oldName);
+            flight.Parameters.Remove(oldName);
+            flight.ColumnOrder.Remove(oldName);
+
+            // 添加新键
+            flight.ColumnOrder.Add(newColumnName);
+            flight.ComputedColumnFormulas[newColumnName] = newFormula;
+            flight.ComputedColumnRcFormulas[newColumnName] = rcFormula;
+
+            // 更新ColumnNode名称并通知UI
+            colNode.Name = newColumnName;
+            colNode.NotifyNameChanged();
+        }
+        else
+        {
+            // 仅更新公式
+            flight.ComputedColumnFormulas[oldName] = newFormula;
+            flight.ComputedColumnRcFormulas[oldName] = rcFormula;
+        }
+
+        // 重新求值
+        int newComputedColIndex = flight.ColumnOrder.IndexOf(newColumnName);
+        var interpCtx = FormulaParser.BuildInterpolationContext(flight.Parameters);
+        double[] evaluated = FormulaParser.EvaluateColumn(rcFormula, newComputedColIndex,
+            flight.Parameters, flight.ColumnOrder, interpCtx);
+        flight.Parameters[newColumnName] = evaluated;
+
+        // 更新CSV文件中的公式（新格式：表头=${列名}[RC公式]，数据=计算值）
+        UpdateComputedColumnInCsv(flight.FilePath, oldName, newColumnName, rcFormula, evaluated);
+
+        // 刷新已绘制的曲线（数据已在Parameters中更新，触发重绘即可）
+        foreach (var panel in ChartPanels)
+        {
+            var curve = panel.Curves.FirstOrDefault(c =>
+                c.FileName == fileNode.FileName && c.Name == oldName);
+            if (curve != null && oldName != newColumnName)
+            {
+                curve.Name = newColumnName;
+            }
+            // 强制刷新图表
+            if (panel.Curves.Any(c => c.FileName == fileNode.FileName && c.Name == newColumnName))
+                panel.Refresh();
+        }
+
+        UpdatePlottedColumns();
+        StatusText = $"已更新计算列: {newColumnName}，公式: {newFormula}";
+    }
+
+    /// <summary>
+    /// 更新CSV文件中计算列的公式（新格式：表头=${列名}[RC公式]，数据=计算值）
+    /// </summary>
+    private static void UpdateComputedColumnInCsv(string filePath, string oldName, string newName, string rcFormula, double[] values)
     {
         if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
             return;
 
         var encoding = Services.CsvFlightImportService.DetectEncodingStatic(filePath);
 
-        // 用 StreamReader 读取（保留原始编码理解）
         string[] lines;
         using (var sr = new System.IO.StreamReader(filePath, encoding))
         {
@@ -1008,21 +1082,91 @@ public partial class MainViewModel : ObservableObject
 
         if (lines.Length == 0) return;
 
-        // 检测分隔符
+        char delimiter = DetectDelimiterStatic(lines[0]);
+
+        // 查找旧列名在表头中的位置（旧列名指去除了编码前缀的纯列名，或老格式纯列名；也匹配新编码格式）
+        var headers = lines[0].Split(delimiter);
+        int colIdx = -1;
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var (parsedName, _, _) = FlightData.ParseComputedHeader(headers[i].Trim());
+            if (parsedName == oldName)
+            {
+                colIdx = i;
+                break;
+            }
+        }
+
+        if (colIdx < 0) return;
+
+        // 更新表头为新编码格式
+        headers[colIdx] = FlightData.EncodeComputedHeader(newName, rcFormula);
+        lines[0] = string.Join(delimiter.ToString(), headers);
+
+        // 更新数据行为计算值
+        for (int i = 1; i < lines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[i])) continue;
+            var fields = lines[i].Split(delimiter);
+            if (colIdx < fields.Length)
+            {
+                int valIdx = i - 1;
+                fields[colIdx] = valIdx < values.Length
+                    ? values[valIdx].ToString(CultureInfo.InvariantCulture)
+                    : "NaN";
+            }
+            lines[i] = string.Join(delimiter.ToString(), fields);
+        }
+
+        using (var sw = new System.IO.StreamWriter(filePath, false, encoding))
+        {
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) sw.Write("\n");
+                sw.Write(lines[i]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 将计算列追加到CSV文件（新格式：表头=${列名}[RC公式]，数据=计算值）
+    /// </summary>
+    private static void AppendComputedColumnToCsv(string filePath, string columnName, string rcFormula, double[] values)
+    {
+        if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
+            return;
+
+        var encoding = Services.CsvFlightImportService.DetectEncodingStatic(filePath);
+
+        string[] lines;
+        using (var sr = new System.IO.StreamReader(filePath, encoding))
+        {
+            var content = sr.ReadToEnd();
+            lines = content.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+        }
+
+        if (lines.Length == 0) return;
+
         char delimiter = DetectDelimiterStatic(lines[0]);
         string delim = delimiter.ToString();
 
-        // 表头追加列名
-        lines[0] = lines[0] + delim + columnName;
+        // 表头追加: ${列名}[RC公式]
+        string encodedHeader = FlightData.EncodeComputedHeader(columnName, rcFormula);
+        lines[0] = lines[0] + delim + encodedHeader;
 
-        // 数据行追加RC公式
+        // 数据行追加计算值
         for (int i = 1; i < lines.Length; i++)
         {
             if (!string.IsNullOrWhiteSpace(lines[i]))
-                lines[i] = lines[i] + delim + rcFormula;
+            {
+                int valIdx = i - 1;
+                string valStr = valIdx < values.Length
+                    ? values[valIdx].ToString(CultureInfo.InvariantCulture)
+                    : "NaN";
+                lines[i] = lines[i] + delim + valStr;
+            }
         }
 
-        // 用 StreamWriter 写回（保持同一编码）
         using (var sw = new System.IO.StreamWriter(filePath, false, encoding))
         {
             for (int i = 0; i < lines.Length; i++)

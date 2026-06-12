@@ -109,6 +109,7 @@
                               ItemsSource="{Binding FileTree}"
                               BorderThickness="0" Margin="5"
                               SelectedItemChanged="DataTreeView_SelectedItemChanged"
+                              PreviewMouseRightButtonDown="DataTreeView_PreviewMouseRightButtonDown"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <TreeView.ItemContainerStyle>
